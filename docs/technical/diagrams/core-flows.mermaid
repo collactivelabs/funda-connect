@@ -1,0 +1,64 @@
+---
+title: FundaConnect — Booking Flow
+---
+flowchart TD
+    A[Parent browses teachers] --> B[Selects teacher + subject + slot]
+    B --> C{Slot available?}
+    C -->|No| D[Show alternative slots]
+    D --> B
+    C -->|Yes| E[Lock slot in Redis - 15min TTL]
+    E --> F[Create booking - pending_payment]
+    F --> G[Generate PayFast payment URL]
+    G --> H[Redirect parent to PayFast]
+    H --> I{Payment outcome}
+    I -->|Success ITN| J[Validate ITN signature]
+    J --> K[Booking → confirmed]
+    K --> L[Generate meeting link]
+    L --> M[Send confirmation SMS + email]
+    I -->|Cancelled| N[Release slot lock]
+    N --> O[Booking → cancelled]
+    I -->|Timeout 15min| P[Release slot lock]
+    P --> Q[Booking → expired]
+
+    M --> R[Lesson takes place]
+    R --> S[Teacher marks complete]
+    S --> T[Booking → completed]
+    T --> U[Prompt parent for review]
+    T --> V[Queue teacher payout]
+
+---
+title: FundaConnect — Teacher Verification
+---
+flowchart TD
+    A[Teacher registers] --> B[verification_status = pending]
+    B --> C[Upload required documents]
+    C --> D{All 5 docs uploaded?}
+    D -->|No| C
+    D -->|Yes| E[verification_status = documents_submitted]
+    E --> F[Admin notification: new verification]
+    F --> G[Admin reviews documents]
+    G --> H{All approved?}
+    H -->|Yes| I[verification_status = verified]
+    I --> J[Profile visible in search]
+    I --> K[Confirmation email to teacher]
+    H -->|No| L[verification_status = rejected]
+    L --> M[Rejection email with reasons]
+    M --> N[Teacher corrects & re-uploads]
+    N --> E
+
+---
+title: FundaConnect — Payment & Payout Flow
+---
+flowchart TD
+    A[Parent books lesson - R250] --> B[PayFast processes payment]
+    B --> C[Funds held in platform account]
+    C --> D[Lesson delivered]
+    D --> E[Teacher marks complete]
+    E --> F[Calculate commission - 17.5%]
+    F --> G[Platform fee: R43.75]
+    F --> H[Teacher share: R206.25]
+    H --> I[Queue for weekly payout]
+    I --> J{Monday 06:00 SAST}
+    J --> K[Batch process payouts]
+    K --> L[Transfer to teacher bank account]
+    L --> M[Payout confirmation email]

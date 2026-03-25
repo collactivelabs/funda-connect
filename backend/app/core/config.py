@@ -1,0 +1,73 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # App
+    ENVIRONMENT: str = "development"
+    SECRET_KEY: str = "change-me"
+    DEBUG: bool = True
+
+    # Database
+    DATABASE_URL: str = "postgresql+asyncpg://fundaconnect:fundaconnect@localhost:5432/fundaconnect"
+
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Meilisearch
+    MEILISEARCH_URL: str = "http://localhost:7700"
+    MEILISEARCH_MASTER_KEY: str = "masterKey"
+
+    # JWT
+    JWT_SECRET_KEY: str = "change-me"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+
+    # PayFast
+    PAYFAST_MERCHANT_ID: str = ""
+    PAYFAST_MERCHANT_KEY: str = ""
+    PAYFAST_PASSPHRASE: str = ""
+    PAYFAST_SANDBOX: bool = True
+
+    # AWS S3
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "af-south-1"
+    AWS_S3_BUCKET: str = "fundaconnect-documents"
+
+    # Email
+    EMAIL_FROM: str = "noreply@fundaconnect.co.za"
+    EMAIL_FROM_NAME: str = "FundaConnect"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+
+    # SMS
+    BULKSMS_USERNAME: str = ""
+    BULKSMS_PASSWORD: str = ""
+
+    # Video
+    DAILY_API_KEY: str = ""
+
+    # CORS
+    ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:3001",
+        "http://localhost:8000",
+    ]
+
+    # Commission
+    PLATFORM_COMMISSION_RATE: float = 0.175  # 17.5%
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT == "production"
+
+
+settings = Settings()
