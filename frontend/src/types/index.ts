@@ -103,9 +103,9 @@ export interface Booking {
   videoRoomUrl?: string;
   isTrial: boolean;
   isRecurring: boolean;
-  teacher?: Pick<TeacherProfile, "id" | "user">;
-  learner?: Pick<Learner, "firstName" | "lastName" | "grade">;
-  subject?: Pick<Subject, "name">;
+  // Nested snippets (populated on list endpoint)
+  learner?: { firstName: string; lastName: string; grade: string } | null;
+  subject?: { id: string; name: string } | null;
 }
 
 // ── Reviews ───────────────────────────────────────────────────

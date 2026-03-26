@@ -55,6 +55,18 @@ class SubjectSnippet(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BookingTeacherSnippet(BaseModel):
+    id: UUID
+    first_name: str
+    last_name: str
+
+    @classmethod
+    def from_teacher_profile(cls, tp) -> "BookingTeacherSnippet":
+        return cls(id=tp.id, first_name=tp.user.first_name, last_name=tp.user.last_name)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class BookingResponse(BaseModel):
     id: UUID
     status: str
@@ -67,10 +79,12 @@ class BookingResponse(BaseModel):
     is_recurring: bool
     parent_notes: str | None = None
     video_room_url: str | None = None
-    # nested
     teacher_id: UUID
     learner_id: UUID
     subject_id: UUID
+    # Optional nested snippets (populated when eager-loaded)
+    learner: LearnerSnippet | None = None
+    subject: SubjectSnippet | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

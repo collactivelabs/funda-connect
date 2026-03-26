@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.deps import get_db, require_any_user, require_parent
 from app.models.booking import Booking
+from app.models.curriculum import Subject
 from app.models.parent import Learner, ParentProfile
 from app.models.payment import Payment
 from app.models.teacher import TeacherProfile
@@ -125,28 +126,29 @@ async def list_my_bookings(
     role = payload.get("role")
     user_id = UUID(payload["sub"])
 
+    base_query = (
+        select(Booking)
+        .options(
+            selectinload(Booking.learner),
+            selectinload(Booking.subject),
+        )
+        .order_by(Booking.scheduled_at.desc())
+    )
+
     if role == "parent":
         profile = await db.scalar(
             select(ParentProfile).where(ParentProfile.user_id == user_id)
         )
         if not profile:
             return []
-        result = await db.scalars(
-            select(Booking)
-            .where(Booking.parent_id == profile.id)
-            .order_by(Booking.scheduled_at.desc())
-        )
+        result = await db.scalars(base_query.where(Booking.parent_id == profile.id))
     else:
         profile = await db.scalar(
             select(TeacherProfile).where(TeacherProfile.user_id == user_id)
         )
         if not profile:
             return []
-        result = await db.scalars(
-            select(Booking)
-            .where(Booking.teacher_id == profile.id)
-            .order_by(Booking.scheduled_at.desc())
-        )
+        result = await db.scalars(base_query.where(Booking.teacher_id == profile.id))
 
     return result.all()
 

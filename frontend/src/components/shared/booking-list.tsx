@@ -87,17 +87,27 @@ export function BookingList() {
 
 function BookingRow({ booking }: { booking: Booking }) {
   const statusCfg = STATUS_CONFIG[booking.status];
+  const subjectName = booking.subject?.name;
+  const learnerName = booking.learner
+    ? `${booking.learner.firstName} ${booking.learner.lastName}`
+    : null;
+
   return (
     <Card>
       <CardContent className="py-3 px-4 flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium">{formatDate(booking.scheduledAt)}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {booking.durationMinutes} min · R{(booking.amountCents / 100).toFixed(2)}
-            {booking.isTrial && " · Trial"}
+            {[
+              subjectName,
+              learnerName,
+              `${booking.durationMinutes} min`,
+              `R${(booking.amountCents / 100).toFixed(2)}`,
+              booking.isTrial ? "Trial" : null,
+            ].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <Badge variant={statusCfg.variant} className="shrink-0">
+        <Badge variant={statusCfg.variant} className="shrink-0 text-xs">
           {statusCfg.label}
         </Badge>
       </CardContent>
