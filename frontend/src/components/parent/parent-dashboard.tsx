@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
 import { AddLearnerDialog } from "./add-learner-dialog";
+import { PaymentStatusBanner } from "./payment-status-banner";
 import { BookingList } from "@/components/shared/booking-list";
 import type { Learner } from "@/types";
 
@@ -31,6 +32,8 @@ export function ParentDashboard() {
 
   return (
     <div className="space-y-8">
+      <PaymentStatusBanner />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>

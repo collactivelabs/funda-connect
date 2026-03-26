@@ -10,8 +10,9 @@ import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
 import { EditProfileDialog } from "./edit-profile-dialog";
 import { SetAvailabilitySheet } from "./set-availability-sheet";
+import { ManageSubjectsDialog } from "./manage-subjects-dialog";
 import { BookingList } from "@/components/shared/booking-list";
-import type { AvailabilitySlot, TeacherProfile } from "@/types";
+import type { AvailabilitySlot, TeacherProfile, TeacherSubject } from "@/types";
 
 const VERIFICATION_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pending: { label: "Pending verification", variant: "secondary" },
@@ -27,6 +28,7 @@ export function TeacherDashboard() {
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [availOpen, setAvailOpen] = useState(false);
+  const [subjectsOpen, setSubjectsOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -117,7 +119,12 @@ export function TeacherDashboard() {
           <CardContent className="pt-6 space-y-4">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Subjects added</span>
-              <span className="font-medium">{profile?.subjects.length ?? 0}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{profile?.subjects.length ?? 0}</span>
+                <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => setSubjectsOpen(true)}>
+                  Manage
+                </Button>
+              </div>
             </div>
             <Separator />
             <div className="flex items-center justify-between text-sm">
@@ -182,6 +189,15 @@ export function TeacherDashboard() {
               <CardDescription>Configure your weekly schedule for bookings.</CardDescription>
             </CardHeader>
           </Card>
+          <Card
+            className="cursor-pointer transition-colors hover:bg-muted/50"
+            onClick={() => setSubjectsOpen(true)}
+          >
+            <CardHeader>
+              <CardTitle className="text-base">Manage Subjects</CardTitle>
+              <CardDescription>Add subjects, grade levels, and curricula you teach.</CardDescription>
+            </CardHeader>
+          </Card>
         </div>
       </section>
 
@@ -199,6 +215,14 @@ export function TeacherDashboard() {
         onOpenChange={setAvailOpen}
         onSaved={(slots) => setAvailability(slots)}
       />
+      {profile && (
+        <ManageSubjectsDialog
+          teacherSubjects={profile.subjects}
+          open={subjectsOpen}
+          onOpenChange={setSubjectsOpen}
+          onChanged={(subjects) => setProfile((prev) => prev ? { ...prev, subjects } : prev)}
+        />
+      )}
     </div>
   );
 }
