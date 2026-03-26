@@ -55,7 +55,10 @@ export const apiClient = {
   teachers: {
     search: (params: unknown) => api.get("/teachers", { params }),
     get: (id: string) => api.get(`/teachers/${id}`),
+    getMe: () => api.get("/teachers/me"),
     updateProfile: (body: unknown) => api.patch("/teachers/me/profile", body),
+    addSubject: (body: unknown) => api.post("/teachers/me/subjects", body),
+    removeSubject: (subjectId: string) => api.delete(`/teachers/me/subjects/${subjectId}`),
     getAvailability: () => api.get("/teachers/me/availability"),
     setAvailability: (body: unknown) => api.put("/teachers/me/availability", body),
     uploadDocument: (form: FormData) =>
@@ -68,6 +71,7 @@ export const apiClient = {
     createLearner: (body: unknown) => api.post("/parents/me/learners", body),
     updateLearner: (id: string, body: unknown) =>
       api.patch(`/parents/me/learners/${id}`, body),
+    deleteLearner: (id: string) => api.delete(`/parents/me/learners/${id}`),
   },
   bookings: {
     create: (body: unknown) => api.post("/bookings", body),
