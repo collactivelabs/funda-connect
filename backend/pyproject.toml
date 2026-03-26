@@ -21,12 +21,12 @@ dependencies = [
     "alembic>=1.13.0",
 
     # Validation & settings
-    "pydantic>=2.7.0",
+    "pydantic[email]>=2.7.0",
     "pydantic-settings>=2.3.0",
 
     # Auth
     "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=5.0.0",
     "python-multipart>=0.0.9",
 
     # Task queue
@@ -64,7 +64,6 @@ dev = [
     "factory-boy>=3.3.0",
     "ruff>=0.5.0",
     "mypy>=1.10.0",
-    "types-passlib",
     "types-python-jose",
 ]
 

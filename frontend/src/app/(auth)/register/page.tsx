@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { RegisterForm } from "@/components/auth/register-form";
 
 export const metadata: Metadata = { title: "Create Account" };
 
@@ -12,8 +14,10 @@ export default function RegisterPage() {
           <CardDescription>Join as a parent or a teacher.</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* TODO: RegisterForm component */}
-          <p className="text-sm text-muted-foreground">Registration form coming soon.</p>
+          {/* Suspense required because RegisterForm uses useSearchParams() */}
+          <Suspense>
+            <RegisterForm />
+          </Suspense>
         </CardContent>
       </Card>
     </main>
