@@ -134,6 +134,15 @@ export interface ApiError {
   code?: string;
 }
 
+// ── Availability ──────────────────────────────────────────────
+export interface AvailabilitySlot {
+  id: string;
+  dayOfWeek: number; // 0=Mon … 6=Sun
+  startTime: string; // "HH:MM"
+  endTime: string;
+  isActive: boolean;
+}
+
 // ── Search / Filter ───────────────────────────────────────────
 export interface TeacherSearchParams {
   subject?: string;
@@ -141,6 +150,5 @@ export interface TeacherSearchParams {
   grade?: string;
   minRate?: number;
   maxRate?: number;
-  page?: number;
-  pageSize?: number;
+  province?: string;
 }

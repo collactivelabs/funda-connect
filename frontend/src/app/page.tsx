@@ -20,11 +20,14 @@ export default function HomePage() {
         </p>
       </div>
 
-      <div className="flex gap-4">
-        <Link href="/register?role=parent" className={buttonVariants({ size: "lg" })}>
-          Find a Teacher
+      <div className="flex flex-wrap justify-center gap-4">
+        <Link href="/teachers" className={buttonVariants({ size: "lg" })}>
+          Browse Teachers
         </Link>
-        <Link href="/register?role=teacher" className={buttonVariants({ variant: "outline", size: "lg" })}>
+        <Link href="/register?role=parent" className={buttonVariants({ variant: "outline", size: "lg" })}>
+          Sign up as Parent
+        </Link>
+        <Link href="/register?role=teacher" className={buttonVariants({ variant: "ghost", size: "lg" })}>
           Teach on FundaConnect
         </Link>
       </div>

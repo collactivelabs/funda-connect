@@ -22,6 +22,31 @@ export function DashboardNav() {
           Funda<span className="text-primary">Connect</span>
         </Link>
 
+        <nav className="hidden sm:flex items-center gap-1 mr-4">
+          <Link
+            href="/teachers"
+            className="text-sm text-muted-foreground hover:text-foreground px-3 py-1 rounded-md transition-colors"
+          >
+            Find Teachers
+          </Link>
+          {user?.role === "parent" && (
+            <Link
+              href="/parent"
+              className="text-sm text-muted-foreground hover:text-foreground px-3 py-1 rounded-md transition-colors"
+            >
+              Dashboard
+            </Link>
+          )}
+          {user?.role === "teacher" && (
+            <Link
+              href="/teacher"
+              className="text-sm text-muted-foreground hover:text-foreground px-3 py-1 rounded-md transition-colors"
+            >
+              Dashboard
+            </Link>
+          )}
+        </nav>
+
         <div className="flex items-center gap-3">
           {user && (
             <>

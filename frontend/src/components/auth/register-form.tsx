@@ -10,14 +10,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiClient } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth.store";
-import type { AuthResponse, UserRole } from "@/types";
+import type { AuthResponse } from "@/types";
 
 export function RegisterForm() {
   const router = useRouter();
   const params = useSearchParams();
   const { setUser, setAccessToken } = useAuthStore();
 
-  const initialRole = (params.get("role") === "teacher" ? "teacher" : "parent") as UserRole;
+  const initialRole: "parent" | "teacher" = params.get("role") === "teacher" ? "teacher" : "parent";
   const [role, setRole] = useState<"parent" | "teacher">(initialRole);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");

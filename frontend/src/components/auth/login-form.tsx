@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,8 @@ import type { AuthResponse } from "@/types";
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get("redirect");
   const { setUser, setAccessToken } = useAuthStore();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +29,8 @@ export function LoginForm() {
       const { data } = await apiClient.auth.login({ email, password }) as { data: AuthResponse };
       setAccessToken(data.access_token);
       setUser(data.user);
-      router.push(data.user.role === "teacher" ? "/teacher" : "/parent");
+      const dest = redirect ?? (data.user.role === "teacher" ? "/teacher" : "/parent");
+      router.push(dest);
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(detail ?? "Sign in failed. Please try again.");
