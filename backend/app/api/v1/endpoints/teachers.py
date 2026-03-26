@@ -1,14 +1,15 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_db, require_teacher
+from app.models.booking import AvailabilitySlot
 from app.models.curriculum import Subject
 from app.models.teacher import TeacherProfile, TeacherSubject
-from app.models.user import User
+from app.schemas.booking import AvailabilitySlotResponse, SetAvailabilityRequest
 from app.schemas.teacher import (
     AddSubjectRequest,
     TeacherProfileResponse,
@@ -18,6 +19,8 @@ from app.schemas.teacher import (
 
 router = APIRouter()
 
+
+# ── Helpers ──────────────────────────────────────────────────
 
 def _teacher_response(profile: TeacherProfile) -> TeacherProfileResponse:
     subjects = [TeacherSubjectResponse.from_orm_with_subject(ts) for ts in profile.subjects]
@@ -53,6 +56,8 @@ async def _get_my_profile(payload: dict, db: AsyncSession) -> TeacherProfile:
     return profile
 
 
+# ── Public ────────────────────────────────────────────────────
+
 @router.get("", response_model=list[TeacherProfileResponse])
 async def list_teachers(
     subject: str | None = None,
@@ -72,7 +77,6 @@ async def list_teachers(
         .options(selectinload(TeacherProfile.user))
         .order_by(TeacherProfile.is_premium.desc(), TeacherProfile.average_rating.desc())
     )
-
     if min_rate is not None:
         query = query.where(TeacherProfile.hourly_rate_cents >= min_rate)
     if max_rate is not None:
@@ -81,7 +85,6 @@ async def list_teachers(
         query = query.where(TeacherProfile.province == province)
     if curriculum:
         query = query.where(TeacherProfile.curricula.contains([curriculum]))
-
     if subject:
         query = query.join(TeacherProfile.subjects).join(TeacherSubject.subject).where(
             Subject.slug == subject
@@ -95,14 +98,39 @@ async def list_teachers(
     return [_teacher_response(p) for p in result.unique().all()]
 
 
+@router.get("/{teacher_id}", response_model=TeacherProfileResponse)
+async def get_teacher(teacher_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get a teacher's public profile."""
+    profile = await db.scalar(
+        select(TeacherProfile)
+        .where(TeacherProfile.id == teacher_id)
+        .options(selectinload(TeacherProfile.subjects).selectinload(TeacherSubject.subject))
+        .options(selectinload(TeacherProfile.user))
+    )
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
+    return _teacher_response(profile)
+
+
+@router.get("/{teacher_id}/availability", response_model=list[AvailabilitySlotResponse])
+async def get_teacher_availability(teacher_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get a teacher's weekly availability (public, for booking)."""
+    result = await db.scalars(
+        select(AvailabilitySlot)
+        .where(AvailabilitySlot.teacher_id == teacher_id, AvailabilitySlot.is_active == True)  # noqa: E712
+        .order_by(AvailabilitySlot.day_of_week, AvailabilitySlot.start_time)
+    )
+    return result.all()
+
+
+# ── Teacher-only ──────────────────────────────────────────────
+
 @router.get("/me", response_model=TeacherProfileResponse)
 async def get_my_profile(
     payload: dict = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the authenticated teacher's own profile."""
-    profile = await _get_my_profile(payload, db)
-    return _teacher_response(profile)
+    return _teacher_response(await _get_my_profile(payload, db))
 
 
 @router.patch("/me/profile", response_model=TeacherProfileResponse)
@@ -111,12 +139,9 @@ async def update_my_profile(
     payload: dict = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    """Teacher updates their own profile."""
     profile = await _get_my_profile(payload, db)
-
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(profile, field, value)
-
     return _teacher_response(profile)
 
 
@@ -126,15 +151,10 @@ async def add_subject(
     payload: dict = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    """Add a subject to the teacher's profile."""
     profile = await _get_my_profile(payload, db)
-
-    # Check subject exists
     subject = await db.get(Subject, body.subject_id)
     if not subject:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
-
-    # Prevent duplicates for same subject+curriculum combo
     existing = await db.scalar(
         select(TeacherSubject).where(
             TeacherSubject.teacher_id == profile.id,
@@ -144,7 +164,6 @@ async def add_subject(
     )
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Subject already added for this curriculum")
-
     ts = TeacherSubject(
         teacher_id=profile.id,
         subject_id=body.subject_id,
@@ -163,7 +182,6 @@ async def remove_subject(
     payload: dict = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    """Remove a subject from the teacher's profile."""
     profile = await _get_my_profile(payload, db)
     ts = await db.get(TeacherSubject, subject_id)
     if not ts or ts.teacher_id != profile.id:
@@ -171,15 +189,40 @@ async def remove_subject(
     await db.delete(ts)
 
 
-@router.get("/{teacher_id}", response_model=TeacherProfileResponse)
-async def get_teacher(teacher_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Get a teacher's public profile."""
-    profile = await db.scalar(
-        select(TeacherProfile)
-        .where(TeacherProfile.id == teacher_id)
-        .options(selectinload(TeacherProfile.subjects).selectinload(TeacherSubject.subject))
-        .options(selectinload(TeacherProfile.user))
+@router.get("/me/availability", response_model=list[AvailabilitySlotResponse])
+async def get_my_availability(
+    payload: dict = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await _get_my_profile(payload, db)
+    result = await db.scalars(
+        select(AvailabilitySlot)
+        .where(AvailabilitySlot.teacher_id == profile.id)
+        .order_by(AvailabilitySlot.day_of_week, AvailabilitySlot.start_time)
     )
-    if not profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
-    return _teacher_response(profile)
+    return result.all()
+
+
+@router.put("/me/availability", response_model=list[AvailabilitySlotResponse])
+async def set_my_availability(
+    body: SetAvailabilityRequest,
+    payload: dict = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace all availability slots (full overwrite)."""
+    profile = await _get_my_profile(payload, db)
+    await db.execute(
+        delete(AvailabilitySlot).where(AvailabilitySlot.teacher_id == profile.id)
+    )
+    slots = [
+        AvailabilitySlot(
+            teacher_id=profile.id,
+            day_of_week=s.day_of_week,
+            start_time=s.start_time,
+            end_time=s.end_time,
+        )
+        for s in body.slots
+    ]
+    db.add_all(slots)
+    await db.flush()
+    return slots
