@@ -12,7 +12,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { BookingDialog } from "@/components/booking/booking-dialog";
 import { apiClient } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth.store";
-import type { AvailabilitySlot, TeacherProfile } from "@/types";
+import type { AvailabilitySlot, Review, TeacherProfile } from "@/types";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -54,6 +54,7 @@ export default function TeacherProfilePage() {
 
   const [teacher, setTeacher] = useState<TeacherProfile | null>(null);
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -62,10 +63,12 @@ export default function TeacherProfilePage() {
     Promise.all([
       apiClient.teachers.get(id),
       apiClient.teachers.getPublicAvailability(id),
+      apiClient.reviews.listForTeacher(id),
     ])
-      .then(([profileRes, availRes]) => {
+      .then(([profileRes, availRes, reviewsRes]) => {
         setTeacher(profileRes.data as TeacherProfile);
         setAvailability(availRes.data as AvailabilitySlot[]);
+        setReviews(reviewsRes.data as Review[]);
       })
       .catch((err) => {
         if (err.response?.status === 404) setNotFound(true);
@@ -208,6 +211,34 @@ export default function TeacherProfilePage() {
                       </div>
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Reviews */}
+            {reviews.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Reviews ({reviews.length})</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {reviews.map((r) => (
+                    <div key={r.id}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium">
+                          {"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}
+                        </span>
+                      </div>
+                      {r.comment && (
+                        <p className="text-sm text-muted-foreground">{r.comment}</p>
+                      )}
+                      {r.teacherReply && (
+                        <div className="mt-2 pl-3 border-l-2 border-muted">
+                          <p className="text-xs text-muted-foreground italic">{r.teacherReply}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
             )}

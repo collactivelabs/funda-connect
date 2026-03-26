@@ -86,7 +86,7 @@ export const apiClient = {
   },
   reviews: {
     create: (body: unknown) => api.post("/reviews", body),
-    reply: (id: string, body: unknown) =>
-      api.post(`/reviews/${id}/reply`, body),
+    reply: (id: string, body: unknown) => api.post(`/reviews/${id}/reply`, body),
+    listForTeacher: (teacherId: string) => api.get(`/reviews/teacher/${teacherId}`),
   },
 };
