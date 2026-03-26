@@ -92,6 +92,7 @@ async def create_booking(
         scheduled_at=body.scheduled_at,
         duration_minutes=body.duration_minutes,
         is_trial=body.is_trial,
+        is_recurring=body.is_recurring and bool(body.recurring_weeks),
         parent_notes=body.parent_notes,
         amount_cents=amount_cents,
         commission_cents=commission_cents,
@@ -106,6 +107,7 @@ async def create_booking(
         gateway="payfast",
         amount_cents=amount_cents,
         status="pending",
+        gateway_metadata={"recurring_weeks": body.recurring_weeks} if body.recurring_weeks else None,
     )
     db.add(payment)
 
@@ -201,9 +203,40 @@ async def cancel_booking(
             detail=f"Cannot cancel a booking with status '{booking.status}'",
         )
 
+    room_url = booking.video_room_url
     booking.status = "cancelled"
     booking.cancellation_reason = body.reason
+    booking.video_room_url = None
+
+    # Best-effort room cleanup (fire-and-forget, don't block the response)
+    if room_url:
+        import asyncio
+        from app.services.video import delete_room
+        room_name = room_url.rstrip("/").split("/")[-1]
+        asyncio.create_task(delete_room(room_name))
+
     return booking
+
+
+def _verify_payfast_signature(data: dict) -> bool:
+    """Verify the PayFast ITN signature against the posted data."""
+    received_sig = data.get("signature", "")
+    # Build parameter string from all fields except signature, preserving order
+    fields = {k: v for k, v in data.items() if k != "signature"}
+    param_string = "&".join(f"{k}={urllib.parse.quote_plus(str(v))}" for k, v in fields.items())
+    if settings.PAYFAST_PASSPHRASE:
+        param_string += f"&passphrase={urllib.parse.quote_plus(settings.PAYFAST_PASSPHRASE)}"
+    expected = hashlib.md5(param_string.encode()).hexdigest()  # noqa: S324
+    return expected == received_sig
+
+
+# PayFast valid source IPs (sandbox + production)
+_PAYFAST_VALID_IPS = {
+    "197.97.145.144", "197.97.145.145", "197.97.145.146", "197.97.145.147",
+    "204.93.204.23", "204.93.204.24", "204.93.204.25", "204.93.204.26",
+    # Allow localhost for sandbox testing
+    "127.0.0.1", "::1",
+}
 
 
 @router.post("/payfast/itn")
@@ -211,6 +244,16 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
     """PayFast Instant Transaction Notification webhook."""
     form = await request.form()
     data = dict(form)
+
+    # Signature verification (skip in sandbox mode to ease local testing)
+    if not settings.PAYFAST_SANDBOX:
+        client_ip = request.client.host if request.client else ""
+        forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        source_ip = forwarded or client_ip
+        if source_ip not in _PAYFAST_VALID_IPS:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown source IP")
+        if not _verify_payfast_signature(data):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature")
 
     booking_id = data.get("m_payment_id")
     pf_payment_id = data.get("pf_payment_id")
@@ -233,7 +276,48 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
 
         if payment_status == "COMPLETE":
             booking.payment.status = "complete"
+            booking.payment.gateway_metadata = {
+                **(booking.payment.gateway_metadata or {}),
+                **data,
+            }
             booking.status = "confirmed"
+
+            # Create video room
+            from app.services.video import create_room
+            room_url = await create_room(
+                booking_id=str(booking.id),
+                scheduled_at=booking.scheduled_at,
+                duration_minutes=booking.duration_minutes,
+            )
+            if room_url:
+                booking.video_room_url = room_url
+
+            # Spawn recurring child bookings (pre-confirmed, no extra payment)
+            recurring_weeks = (booking.payment.gateway_metadata or {}).get("recurring_weeks")
+            if booking.is_recurring and recurring_weeks and recurring_weeks > 1:
+                from datetime import timedelta
+                for week in range(1, recurring_weeks):
+                    child = Booking(
+                        parent_id=booking.parent_id,
+                        teacher_id=booking.teacher_id,
+                        learner_id=booking.learner_id,
+                        subject_id=booking.subject_id,
+                        scheduled_at=booking.scheduled_at + timedelta(weeks=week),
+                        duration_minutes=booking.duration_minutes,
+                        is_trial=False,
+                        is_recurring=True,
+                        recurring_booking_id=booking.id,
+                        parent_notes=booking.parent_notes,
+                        amount_cents=booking.amount_cents,
+                        commission_cents=booking.commission_cents,
+                        teacher_payout_cents=booking.teacher_payout_cents,
+                        status="confirmed",
+                    )
+                    db.add(child)
+
+            # Fire confirmation emails (after DB commit via Celery)
+            from app.tasks.notifications import send_booking_confirmation
+            send_booking_confirmation.apply_async(args=[str(booking.id)], countdown=5)
         elif payment_status in ("FAILED", "CANCELLED"):
             booking.payment.status = payment_status.lower()
 

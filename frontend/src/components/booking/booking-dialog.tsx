@@ -40,6 +40,8 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
   const [scheduledAt, setScheduledAt] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [isTrial, setIsTrial] = useState(false);
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringWeeks, setRecurringWeeks] = useState(4);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -92,6 +94,8 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
         scheduled_at: new Date(scheduledAt).toISOString(),
         duration_minutes: durationMinutes,
         is_trial: isTrial,
+        is_recurring: isRecurring,
+        recurring_weeks: isRecurring ? recurringWeeks : undefined,
       });
 
       // Redirect to PayFast
@@ -222,16 +226,64 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
             </Label>
           </div>
 
+          {/* Recurring toggle */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                id="recurring"
+                type="checkbox"
+                checked={isRecurring}
+                onChange={(e) => setIsRecurring(e.target.checked)}
+                className="h-4 w-4 rounded border"
+              />
+              <Label htmlFor="recurring" className="cursor-pointer font-normal">
+                Recurring weekly
+              </Label>
+            </div>
+            {isRecurring && (
+              <div className="ml-6 flex items-center gap-2">
+                <Label htmlFor="recurring_weeks" className="font-normal text-sm text-muted-foreground whitespace-nowrap">
+                  Number of weeks:
+                </Label>
+                <input
+                  id="recurring_weeks"
+                  type="number"
+                  min={2}
+                  max={12}
+                  value={recurringWeeks}
+                  onChange={(e) => setRecurringWeeks(Math.min(12, Math.max(2, Number(e.target.value))))}
+                  className="flex h-8 w-20 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <span className="text-sm text-muted-foreground">({recurringWeeks} lessons total)</span>
+              </div>
+            )}
+          </div>
+
           {/* Price summary */}
           {amountCents !== null && (
             <>
               <Separator />
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Total</span>
-                <span className="font-semibold text-base">
-                  R{(amountCents / 100).toFixed(2)}
-                </span>
-              </div>
+              {isRecurring ? (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Per lesson</span>
+                    <span>R{(amountCents / 100).toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Total ({recurringWeeks} lessons)</span>
+                    <span className="font-semibold text-base">
+                      R{(amountCents * recurringWeeks / 100).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="font-semibold text-base">
+                    R{(amountCents / 100).toFixed(2)}
+                  </span>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground -mt-2">
                 You'll be redirected to PayFast to complete payment.
               </p>

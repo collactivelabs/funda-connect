@@ -45,6 +45,14 @@ export function DashboardNav() {
               Dashboard
             </Link>
           )}
+          {user?.role === "admin" && (
+            <Link
+              href="/admin"
+              className="text-sm text-muted-foreground hover:text-foreground px-3 py-1 rounded-md transition-colors"
+            >
+              Admin
+            </Link>
+          )}
         </nav>
 
         <div className="flex items-center gap-3">

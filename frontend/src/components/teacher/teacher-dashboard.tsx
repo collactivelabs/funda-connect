@@ -11,6 +11,7 @@ import { apiClient } from "@/lib/api";
 import { EditProfileDialog } from "./edit-profile-dialog";
 import { SetAvailabilitySheet } from "./set-availability-sheet";
 import { ManageSubjectsDialog } from "./manage-subjects-dialog";
+import { UploadDocumentDialog } from "./upload-document-dialog";
 import { BookingList } from "@/components/shared/booking-list";
 import type { AvailabilitySlot, TeacherProfile, TeacherSubject } from "@/types";
 
@@ -73,8 +74,11 @@ export function TeacherDashboard() {
       {/* Verification prompt */}
       {profile?.verificationStatus === "pending" && (
         <Alert>
-          <AlertDescription>
-            Your account is pending verification. Upload your SACE certificate and qualification documents to get verified and start listing lessons.
+          <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
+            <span>
+              Your account is pending verification. Upload your SACE certificate and qualification documents to get verified and start listing lessons.
+            </span>
+            <UploadDocumentDialog />
           </AlertDescription>
         </Alert>
       )}
@@ -162,7 +166,7 @@ export function TeacherDashboard() {
       {/* Upcoming bookings */}
       <section>
         <h2 className="mb-4 text-lg font-semibold">Lessons</h2>
-        <BookingList />
+        <BookingList role="teacher" />
       </section>
 
       {/* Quick actions */}

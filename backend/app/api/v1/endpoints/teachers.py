@@ -1,13 +1,19 @@
+import asyncio
+import uuid as uuid_lib
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.deps import get_db, require_teacher
 from app.models.booking import AvailabilitySlot
 from app.models.curriculum import Subject
+from app.models.payment import VerificationDocument
 from app.models.teacher import TeacherProfile, TeacherSubject
 from app.schemas.booking import AvailabilitySlotResponse, SetAvailabilityRequest
 from app.schemas.teacher import (
@@ -15,6 +21,7 @@ from app.schemas.teacher import (
     TeacherProfileResponse,
     TeacherSubjectResponse,
     UpdateProfileRequest,
+    VerificationDocumentResponse,
 )
 
 router = APIRouter()
@@ -226,3 +233,97 @@ async def set_my_availability(
     db.add_all(slots)
     await db.flush()
     return slots
+
+
+# ── Documents ─────────────────────────────────────────────────
+
+_ALLOWED_DOC_TYPES = {
+    "id_document", "qualification", "sace_certificate", "nrso_clearance", "reference_letter"
+}
+_MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _upload_to_s3(key: str, data: bytes, content_type: str) -> str:
+    """Synchronous S3 upload — run via asyncio.to_thread."""
+    s3 = boto3.client(
+        "s3",
+        region_name=settings.AWS_REGION,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None,
+    )
+    s3.put_object(
+        Bucket=settings.AWS_S3_BUCKET,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+    )
+    return f"https://{settings.AWS_S3_BUCKET}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"
+
+
+@router.get("/me/documents", response_model=list[VerificationDocumentResponse])
+async def list_my_documents(
+    payload: dict = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the authenticated teacher's uploaded verification documents."""
+    profile = await _get_my_profile(payload, db)
+    result = await db.scalars(
+        select(VerificationDocument)
+        .where(VerificationDocument.teacher_id == profile.id)
+        .order_by(VerificationDocument.created_at.desc())
+    )
+    return result.all()
+
+
+@router.post(
+    "/me/documents",
+    response_model=VerificationDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_document(
+    document_type: str,
+    file: UploadFile = File(...),
+    payload: dict = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a verification document (ID, qualification, etc.) to S3."""
+    if document_type not in _ALLOWED_DOC_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"document_type must be one of: {', '.join(sorted(_ALLOWED_DOC_TYPES))}",
+        )
+
+    data = await file.read()
+    if len(data) > _MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds 10 MB limit",
+        )
+
+    profile = await _get_my_profile(payload, db)
+
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
+    key = f"documents/{profile.id}/{document_type}/{uuid_lib.uuid4()}.{ext}"
+    content_type = file.content_type or "application/octet-stream"
+
+    try:
+        file_url = await asyncio.to_thread(_upload_to_s3, key, data, content_type)
+    except (BotoCoreError, ClientError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Storage upload failed: {exc}",
+        ) from exc
+
+    doc = VerificationDocument(
+        teacher_id=profile.id,
+        document_type=document_type,
+        file_url=file_url,
+        file_name=file.filename or key.split("/")[-1],
+    )
+    db.add(doc)
+    await db.flush()
+
+    from app.tasks.notifications import notify_admin_verification_submitted
+    notify_admin_verification_submitted.apply_async(args=[str(profile.id)], countdown=5)
+
+    return doc

@@ -62,8 +62,9 @@ export const apiClient = {
     getAvailability: () => api.get("/teachers/me/availability"),
     setAvailability: (body: unknown) => api.put("/teachers/me/availability", body),
     getPublicAvailability: (id: string) => api.get(`/teachers/${id}/availability`),
-    uploadDocument: (form: FormData) =>
-      api.post("/teachers/me/documents", form, {
+    listDocuments: () => api.get("/teachers/me/documents"),
+    uploadDocument: (documentType: string, form: FormData) =>
+      api.post(`/teachers/me/documents?document_type=${encodeURIComponent(documentType)}`, form, {
         headers: { "Content-Type": "multipart/form-data" },
       }),
   },
@@ -88,5 +89,17 @@ export const apiClient = {
     create: (body: unknown) => api.post("/reviews", body),
     reply: (id: string, body: unknown) => api.post(`/reviews/${id}/reply`, body),
     listForTeacher: (teacherId: string) => api.get(`/reviews/teacher/${teacherId}`),
+  },
+  admin: {
+    getStats: () => api.get("/admin/stats"),
+    listTeachers: (params?: { verification_status?: string }) =>
+      api.get("/admin/teachers", { params }),
+    verifyTeacher: (id: string, body: { action: string; notes?: string }) =>
+      api.patch(`/admin/teachers/${id}/verify`, body),
+    togglePremium: (id: string) => api.patch(`/admin/teachers/${id}/premium`),
+    listPayouts: (params?: { payout_status?: string }) =>
+      api.get("/admin/payouts", { params }),
+    updatePayout: (id: string, body: { status: string; bank_reference?: string; notes?: string }) =>
+      api.patch(`/admin/payouts/${id}`, body),
   },
 };

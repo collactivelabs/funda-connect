@@ -7,6 +7,7 @@ celery_app = Celery(
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
     include=[
+        "app.tasks.lessons",
         "app.tasks.notifications",
         "app.tasks.payouts",
         "app.tasks.verification",
@@ -22,10 +23,15 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     beat_schedule={
-        # Run weekly payouts every Monday at 02:00 SAST
+        # Mark completed lessons and create payout records every 15 minutes
+        "auto-complete-lessons": {
+            "task": "app.tasks.lessons.auto_complete_lessons",
+            "schedule": 60 * 15,
+        },
+        # Weekly payout batch every Monday at 02:00 SAST
         "process-weekly-payouts": {
             "task": "app.tasks.payouts.process_weekly_payouts",
-            "schedule": 60 * 60 * 24 * 7,  # weekly
+            "schedule": 60 * 60 * 24 * 7,
         },
     },
 )

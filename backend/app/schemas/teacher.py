@@ -75,3 +75,13 @@ class AddSubjectRequest(BaseModel):
     subject_id: UUID
     grade_levels: list[str] = Field(..., min_length=1)
     curriculum: str  # CAPS | Cambridge | IEB
+
+
+class VerificationDocumentResponse(BaseModel):
+    id: UUID
+    document_type: str
+    file_url: str
+    file_name: str
+    status: str
+
+    model_config = ConfigDict(from_attributes=True)

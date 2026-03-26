@@ -77,6 +77,7 @@ class BookingResponse(BaseModel):
     teacher_payout_cents: int
     is_trial: bool
     is_recurring: bool
+    recurring_booking_id: UUID | None = None
     parent_notes: str | None = None
     video_room_url: str | None = None
     teacher_id: UUID
@@ -96,6 +97,8 @@ class CreateBookingRequest(BaseModel):
     scheduled_at: datetime
     duration_minutes: int = Field(60, ge=30, le=180)
     is_trial: bool = False
+    is_recurring: bool = False
+    recurring_weeks: int | None = Field(None, ge=2, le=12)  # total occurrences if recurring
     parent_notes: str | None = None
 
 

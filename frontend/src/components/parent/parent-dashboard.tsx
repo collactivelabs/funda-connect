@@ -99,7 +99,7 @@ export function ParentDashboard() {
       {/* Bookings section */}
       <section>
         <h2 className="mb-4 text-lg font-semibold">Lessons</h2>
-        <BookingList />
+        <BookingList role="parent" />
       </section>
 
       {/* Add learner dialog */}
