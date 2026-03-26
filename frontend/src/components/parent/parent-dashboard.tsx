@@ -7,12 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
+import { AddLearnerDialog } from "./add-learner-dialog";
+import { BookingList } from "@/components/shared/booking-list";
 import type { Learner } from "@/types";
 
 export function ParentDashboard() {
   const [learners, setLearners] = useState<Learner[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     apiClient.parents.getLearners()
@@ -20,6 +24,10 @@ export function ParentDashboard() {
       .catch(() => null)
       .finally(() => setLoading(false));
   }, []);
+
+  function handleLearnerAdded(learner: Learner) {
+    setLearners((prev) => [...prev, learner]);
+  }
 
   return (
     <div className="space-y-8">
@@ -37,7 +45,7 @@ export function ParentDashboard() {
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Learners</h2>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
             + Add Learner
           </Button>
         </div>
@@ -59,14 +67,16 @@ export function ParentDashboard() {
               <p className="mb-4 text-muted-foreground">
                 No learners added yet. Add your child to start booking lessons.
               </p>
-              <Button variant="outline">+ Add your first learner</Button>
+              <Button variant="outline" onClick={() => setAddOpen(true)}>
+                + Add your first learner
+              </Button>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {learners.map((learner) => (
               <Card key={learner.id}>
-                <CardHeader>
+                <CardHeader className="pb-2">
                   <CardTitle className="text-base">
                     {learner.firstName} {learner.lastName}
                   </CardTitle>
@@ -81,24 +91,20 @@ export function ParentDashboard() {
         )}
       </section>
 
-      {/* Quick actions */}
+      <Separator />
+
+      {/* Bookings section */}
       <section>
-        <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card className="cursor-pointer transition-colors hover:bg-muted/50">
-            <CardHeader>
-              <CardTitle className="text-base">Browse Teachers</CardTitle>
-              <CardDescription>Find a verified CAPS, Cambridge or IEB specialist.</CardDescription>
-            </CardHeader>
-          </Card>
-          <Card className="cursor-pointer transition-colors hover:bg-muted/50">
-            <CardHeader>
-              <CardTitle className="text-base">Upcoming Lessons</CardTitle>
-              <CardDescription>View and manage scheduled sessions.</CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
+        <h2 className="mb-4 text-lg font-semibold">Lessons</h2>
+        <BookingList />
       </section>
+
+      {/* Add learner dialog */}
+      <AddLearnerDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onAdded={handleLearnerAdded}
+      />
     </div>
   );
 }

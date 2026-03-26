@@ -8,7 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
-import type { TeacherProfile } from "@/types";
+import { EditProfileDialog } from "./edit-profile-dialog";
+import { SetAvailabilitySheet } from "./set-availability-sheet";
+import { BookingList } from "@/components/shared/booking-list";
+import type { AvailabilitySlot, TeacherProfile } from "@/types";
 
 const VERIFICATION_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pending: { label: "Pending verification", variant: "secondary" },
@@ -20,11 +23,20 @@ const VERIFICATION_LABELS: Record<string, { label: string; variant: "default" | 
 
 export function TeacherDashboard() {
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
+  const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
+  const [availOpen, setAvailOpen] = useState(false);
 
   useEffect(() => {
-    apiClient.teachers.getMe()
-      .then(({ data }) => setProfile(data as TeacherProfile))
+    Promise.all([
+      apiClient.teachers.getMe(),
+      apiClient.teachers.getAvailability(),
+    ])
+      .then(([profileRes, availRes]) => {
+        setProfile(profileRes.data as TeacherProfile);
+        setAvailability(availRes.data as AvailabilitySlot[]);
+      })
       .catch(() => null)
       .finally(() => setLoading(false));
   }, []);
@@ -96,8 +108,10 @@ export function TeacherDashboard() {
       {/* Profile setup */}
       <section>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Profile Setup</h2>
-          <Button variant="outline" size="sm">Edit Profile</Button>
+          <h2 className="text-lg font-semibold">Profile</h2>
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+            Edit Profile
+          </Button>
         </div>
         <Card>
           <CardContent className="pt-6 space-y-4">
@@ -108,7 +122,7 @@ export function TeacherDashboard() {
             <Separator />
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Curricula</span>
-              <div className="flex gap-1">
+              <div className="flex gap-1 flex-wrap justify-end">
                 {profile?.curricula.length
                   ? profile.curricula.map((c) => <Badge key={c} variant="secondary">{c}</Badge>)
                   : <span className="text-muted-foreground">None</span>
@@ -122,6 +136,11 @@ export function TeacherDashboard() {
             </div>
             <Separator />
             <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Availability slots</span>
+              <span className="font-medium">{availability.length}</span>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Listed on marketplace</span>
               <Badge variant={profile?.isListed ? "default" : "secondary"}>
                 {profile?.isListed ? "Listed" : "Unlisted"}
@@ -131,17 +150,33 @@ export function TeacherDashboard() {
         </Card>
       </section>
 
+      <Separator />
+
+      {/* Upcoming bookings */}
+      <section>
+        <h2 className="mb-4 text-lg font-semibold">Lessons</h2>
+        <BookingList />
+      </section>
+
       {/* Quick actions */}
       <section>
         <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Card className="cursor-pointer transition-colors hover:bg-muted/50">
+          <Card
+            className="cursor-pointer transition-colors hover:bg-muted/50"
+            onClick={() => setEditOpen(true)}
+          >
             <CardHeader>
-              <CardTitle className="text-base">Upload Documents</CardTitle>
-              <CardDescription>Submit your SACE cert, qualifications, and ID for verification.</CardDescription>
+              <CardTitle className="text-base">Edit Profile</CardTitle>
+              <CardDescription>
+                Update your bio, hourly rate, and curricula to attract more bookings.
+              </CardDescription>
             </CardHeader>
           </Card>
-          <Card className="cursor-pointer transition-colors hover:bg-muted/50">
+          <Card
+            className="cursor-pointer transition-colors hover:bg-muted/50"
+            onClick={() => setAvailOpen(true)}
+          >
             <CardHeader>
               <CardTitle className="text-base">Set Availability</CardTitle>
               <CardDescription>Configure your weekly schedule for bookings.</CardDescription>
@@ -149,6 +184,21 @@ export function TeacherDashboard() {
           </Card>
         </div>
       </section>
+
+      {/* Modals */}
+      {profile && (
+        <EditProfileDialog
+          profile={profile}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSaved={(updated) => setProfile(updated)}
+        />
+      )}
+      <SetAvailabilitySheet
+        open={availOpen}
+        onOpenChange={setAvailOpen}
+        onSaved={(slots) => setAvailability(slots)}
+      />
     </div>
   );
 }
