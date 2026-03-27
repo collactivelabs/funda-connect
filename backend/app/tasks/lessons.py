@@ -12,6 +12,106 @@ logger = structlog.get_logger()
 
 
 @celery_app.task
+def expire_pending_booking_hold(booking_id: str) -> None:
+    """Expire a single pending-payment booking hold if it is still outstanding."""
+
+    async def _run() -> str | None:
+        from uuid import UUID
+
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+        from sqlalchemy.orm import selectinload
+
+        from app.core.config import settings
+        from app.core.redis import get_redis
+        from app.models.booking import Booking
+        from app.services.scheduling import (
+            booking_occurrence_starts,
+            release_slot_hold,
+            slot_lock_keys,
+        )
+
+        engine = create_async_engine(settings.DATABASE_URL, echo=False)
+
+        try:
+            async with AsyncSession(engine) as db:
+                booking = await db.scalar(
+                    select(Booking)
+                    .where(Booking.id == UUID(booking_id))
+                    .options(selectinload(Booking.payment))
+                )
+                if not booking or booking.status != "pending_payment":
+                    return None
+
+                now = datetime.now(UTC)
+                if booking.hold_expires_at is None or booking.hold_expires_at > now:
+                    return None
+
+                recurring_weeks = 1
+                if booking.payment and isinstance(booking.payment.gateway_metadata, dict):
+                    recurring_weeks = int(booking.payment.gateway_metadata.get("recurring_weeks") or 1)
+
+                booking.status = "expired"
+                booking.hold_expires_at = None
+                if booking.payment and booking.payment.status == "pending":
+                    booking.payment.status = "cancelled"
+
+                await db.commit()
+
+                redis = await get_redis()
+                await release_slot_hold(
+                    redis,
+                    slot_lock_keys(
+                        booking.teacher_id,
+                        booking_occurrence_starts(booking.scheduled_at, recurring_weeks),
+                        booking.duration_minutes,
+                    ),
+                )
+                return str(booking.id)
+        finally:
+            await engine.dispose()
+
+    expired_booking_id = asyncio.run(_run())
+    if expired_booking_id:
+        logger.info("expire_pending_booking_hold.done", booking_id=expired_booking_id)
+
+
+@celery_app.task
+def expire_pending_booking_holds() -> None:
+    """Sweep and expire any pending-payment booking holds past their expiry."""
+
+    async def _run() -> list[str]:
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+        from app.core.config import settings
+        from app.models.booking import Booking
+
+        engine = create_async_engine(settings.DATABASE_URL, echo=False)
+
+        try:
+            async with AsyncSession(engine) as db:
+                now = datetime.now(UTC)
+                result = await db.scalars(
+                    select(Booking.id).where(
+                        Booking.status == "pending_payment",
+                        Booking.hold_expires_at.is_not(None),
+                        Booking.hold_expires_at <= now,
+                    )
+                )
+                return [str(booking_id) for booking_id in result.all()]
+        finally:
+            await engine.dispose()
+
+    expired_ids = asyncio.run(_run())
+    for booking_id in expired_ids:
+        expire_pending_booking_hold.delay(booking_id)
+
+    if expired_ids:
+        logger.info("expire_pending_booking_holds.done", count=len(expired_ids), booking_ids=expired_ids)
+
+
+@celery_app.task
 def auto_complete_lessons() -> None:
     """
     Mark confirmed bookings as 'completed' once their scheduled time + duration

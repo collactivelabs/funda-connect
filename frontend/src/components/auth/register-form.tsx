@@ -40,7 +40,7 @@ export function RegisterForm() {
         role,
         phone: phone || undefined,
       }) as { data: AuthResponse };
-      setAccessToken(data.access_token);
+      setAccessToken(data.accessToken);
       setUser(data.user);
       router.push(data.user.role === "teacher" ? "/teacher" : "/parent");
     } catch (err: unknown) {

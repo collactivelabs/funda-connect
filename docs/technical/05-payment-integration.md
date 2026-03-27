@@ -69,9 +69,9 @@ PAYFAST_MERCHANT_ID=10000100
 PAYFAST_MERCHANT_KEY=46f0cd694...
 PAYFAST_PASSPHRASE=your-secret-passphrase
 PAYFAST_SANDBOX=true                    # false in production
-PAYFAST_RETURN_URL=https://fundaconnect.co.za/booking/success
-PAYFAST_CANCEL_URL=https://fundaconnect.co.za/booking/cancelled
-PAYFAST_NOTIFY_URL=https://api.fundaconnect.co.za/api/v1/webhooks/payfast
+PAYFAST_RETURN_URL=https://fundaconnect.co.za/parent
+PAYFAST_CANCEL_URL=https://fundaconnect.co.za/parent
+PAYFAST_NOTIFY_URL=https://api.fundaconnect.co.za/api/v1/bookings/payfast/itn
 ```
 
 ### 3.2 Payment Initiation
@@ -100,16 +100,19 @@ def generate_payfast_payment(booking, parent):
         "custom_str2": str(booking.teacher_id),
     }
     
-    # Generate signature
+    # Generate signature but do not submit passphrase as a form field
     payload_string = urllib.parse.urlencode(data)
     if settings.PAYFAST_PASSPHRASE:
         payload_string += f"&passphrase={settings.PAYFAST_PASSPHRASE}"
-    data["signature"] = hashlib.md5(payload_string.encode()).hexdigest()
-    
-    base_url = "https://sandbox.payfast.co.za" if settings.PAYFAST_SANDBOX else "https://www.payfast.co.za"
-    redirect_url = f"{base_url}/eng/process?" + urllib.parse.urlencode(data)
-    
-    return redirect_url
+    signature = hashlib.md5(payload_string.encode()).hexdigest()
+
+    return {
+        "payment_url": "https://sandbox.payfast.co.za/eng/process",
+        "form_data": {
+            **data,
+            "signature": signature,
+        },
+    }
 ```
 
 ### 3.3 ITN (Instant Transaction Notification) Handler
@@ -117,7 +120,7 @@ def generate_payfast_payment(booking, parent):
 PayFast sends a server-to-server POST to the `notify_url` when payment status changes.
 
 ```python
-@router.post("/webhooks/payfast")
+@router.post("/bookings/payfast/itn")
 async def payfast_itn(request: Request):
     form_data = await request.form()
     data = dict(form_data)

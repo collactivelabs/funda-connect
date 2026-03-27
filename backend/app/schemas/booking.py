@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ── Availability ──────────────────────────────────────────────
@@ -101,6 +101,13 @@ class CreateBookingRequest(BaseModel):
     recurring_weeks: int | None = Field(None, ge=2, le=12)  # total occurrences if recurring
     parent_notes: str | None = None
 
+    @field_validator("duration_minutes")
+    @classmethod
+    def duration_must_be_30_min_steps(cls, value: int) -> int:
+        if value % 30 != 0:
+            raise ValueError("duration_minutes must be in 30-minute increments")
+        return value
+
 
 class CancelBookingRequest(BaseModel):
     reason: str | None = None
@@ -109,4 +116,13 @@ class CancelBookingRequest(BaseModel):
 class PayFastRedirectResponse(BaseModel):
     booking_id: UUID
     payment_url: str
+    form_data: dict[str, str]
     amount_cents: int
+
+
+class BookableSlotResponse(BaseModel):
+    start_at: datetime
+    end_at: datetime
+    date: date
+    date_label: str
+    time_label: str

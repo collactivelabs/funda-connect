@@ -1,4 +1,8 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+from typing import Annotated
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -34,6 +38,9 @@ class Settings(BaseSettings):
     PAYFAST_MERCHANT_KEY: str = ""
     PAYFAST_PASSPHRASE: str = ""
     PAYFAST_SANDBOX: bool = True
+    PAYFAST_RETURN_URL: str = ""
+    PAYFAST_CANCEL_URL: str = ""
+    PAYFAST_NOTIFY_URL: str = ""
 
     # AWS S3
     AWS_ACCESS_KEY_ID: str = ""
@@ -57,7 +64,7 @@ class Settings(BaseSettings):
     DAILY_API_KEY: str = ""
 
     # CORS
-    ALLOWED_ORIGINS: list[str] = [
+    ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = [
         "http://localhost:3001",
         "http://localhost:8000",
     ]
@@ -65,9 +72,35 @@ class Settings(BaseSettings):
     # Commission
     PLATFORM_COMMISSION_RATE: float = 0.175  # 17.5%
 
+    # Booking / scheduling
+    BOOKING_HOLD_MINUTES: int = 15
+    BOOKING_MIN_LEAD_MINUTES: int = 60
+    BOOKABLE_SLOT_DAYS: int = 21
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(origin).strip() for origin in value if str(origin).strip()]
+        if isinstance(value, tuple):
+            return [str(origin).strip() for origin in value if str(origin).strip()]
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                parsed = json.loads(raw)
+                if not isinstance(parsed, list):
+                    raise ValueError("ALLOWED_ORIGINS JSON value must be an array")
+                return [str(origin).strip() for origin in parsed if str(origin).strip()]
+            return [origin.strip() for origin in raw.split(",") if origin.strip()]
+        raise TypeError("ALLOWED_ORIGINS must be a list or comma-separated string")
 
 
 settings = Settings()

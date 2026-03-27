@@ -123,7 +123,7 @@ export function SetAvailabilitySheet({ open, onOpenChange, onSaved }: SetAvailab
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+      <SheetContent side="right" className="w-full overflow-y-auto p-6" style={{ maxWidth: "40rem" }}>
         <SheetHeader className="mb-6">
           <SheetTitle>Set Weekly Availability</SheetTitle>
           <SheetDescription>
@@ -139,54 +139,54 @@ export function SetAvailabilitySheet({ open, onOpenChange, onSaved }: SetAvailab
               const slots = daySlots[day] ?? [];
               return (
                 <div key={day}>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{dayName}</span>
+                      <span className="font-semibold">{dayName}</span>
                       {slots.length > 0 && (
                         <Badge variant="secondary" className="text-xs">{slots.length} slot{slots.length !== 1 ? "s" : ""}</Badge>
                       )}
                     </div>
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
                       onClick={() => addSlot(day)}
-                      className="text-xs h-7"
+                      className="text-xs"
                     >
                       + Add slot
                     </Button>
                   </div>
 
                   {slots.length === 0 ? (
-                    <p className="text-xs text-muted-foreground pl-0.5">No slots — unavailable this day.</p>
+                    <p className="text-sm text-muted-foreground">No slots — unavailable this day.</p>
                   ) : (
                     <div className="space-y-2">
                       {slots.map((slot) => (
-                        <div key={slot.id} className="flex items-center gap-2">
+                        <div key={slot.id} className="flex items-center gap-3 pl-1">
                           <Select
                             value={slot.startTime}
                             onValueChange={(v) => updateSlot(day, slot.id, "startTime", v ?? slot.startTime)}
                           >
-                            <SelectTrigger className="h-8 text-xs w-28">
+                            <SelectTrigger className="h-9 text-sm min-w-[8rem] flex-1">
                               <SelectValue>{formatTime(slot.startTime)}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               {TIME_OPTIONS.map((t) => (
-                                <SelectItem key={t} value={t} className="text-xs">{formatTime(t)}</SelectItem>
+                                <SelectItem key={t} value={t} className="text-sm">{formatTime(t)}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                          <span className="text-muted-foreground text-xs">to</span>
+                          <span className="text-muted-foreground text-sm">to</span>
                           <Select
                             value={slot.endTime}
                             onValueChange={(v) => updateSlot(day, slot.id, "endTime", v ?? slot.endTime)}
                           >
-                            <SelectTrigger className="h-8 text-xs w-28">
+                            <SelectTrigger className="h-9 text-sm min-w-[8rem] flex-1">
                               <SelectValue>{formatTime(slot.endTime)}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               {TIME_OPTIONS.filter((t) => t > slot.startTime).map((t) => (
-                                <SelectItem key={t} value={t} className="text-xs">{formatTime(t)}</SelectItem>
+                                <SelectItem key={t} value={t} className="text-sm">{formatTime(t)}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>

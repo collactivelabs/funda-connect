@@ -27,45 +27,46 @@ import { useRouter } from "next/navigation";
 // ── Types ─────────────────────────────────────────────────────
 
 interface Stats {
-  total_teachers: number;
-  pending_verification: number;
-  verified_teachers: number;
-  total_parents: number;
-  total_bookings: number;
-  confirmed_bookings: number;
-  total_revenue_cents: number;
-  pending_payouts_cents: number;
+  totalTeachers: number;
+  pendingVerification: number;
+  verifiedTeachers: number;
+  totalParents: number;
+  totalBookings: number;
+  confirmedBookings: number;
+  totalRevenueCents: number;
+  pendingPayoutsCents: number;
 }
 
 interface AdminTeacher {
   id: string;
-  user_id: string;
-  first_name: string;
-  last_name: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
   email: string;
-  verification_status: string;
-  is_listed: boolean;
-  is_premium: boolean;
-  total_lessons: number;
-  hourly_rate_cents: number | null;
+  verificationStatus: string;
+  isListed: boolean;
+  isPremium: boolean;
+  totalLessons: number;
+  hourlyRateCents: number | null;
   province: string | null;
-  subject_count: number;
-  document_count: number;
+  subjectCount: number;
+  documentCount: number;
 }
 
 interface AdminPayout {
   id: string;
-  teacher_id: string;
-  teacher_name: string;
-  amount_cents: number;
+  teacherId: string;
+  teacherName: string;
+  amountCents: number;
   status: string;
-  created_at: string;
+  createdAt: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────
 
-function formatRand(cents: number) {
-  return `R${(cents / 100).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`;
+function formatRand(cents: number | null | undefined) {
+  const value = typeof cents === "number" && Number.isFinite(cents) ? cents : 0;
+  return `R${(value / 100).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`;
 }
 
 const VERIFICATION_BADGE: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
@@ -146,8 +147,8 @@ export default function AdminPage() {
           t.id === teacherId
             ? {
                 ...t,
-                verification_status: action === "verify" ? "verified" : action === "reject" ? "rejected" : "suspended",
-                is_listed: action === "verify",
+                verificationStatus: action === "verify" ? "verified" : action === "reject" ? "rejected" : "suspended",
+                isListed: action === "verify",
               }
             : t
         )
@@ -164,7 +165,7 @@ export default function AdminPage() {
     try {
       const { data } = await apiClient.admin.togglePremium(teacherId);
       setTeachers((prev) =>
-        prev.map((t) => (t.id === teacherId ? { ...t, is_premium: (data as { is_premium: boolean }).is_premium } : t))
+        prev.map((t) => (t.id === teacherId ? { ...t, isPremium: (data as { isPremium: boolean }).isPremium } : t))
       );
     } finally {
       setActionLoading(null);
@@ -196,14 +197,14 @@ export default function AdminPage() {
       {/* Stats */}
       {stats ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <StatCard label="Total Teachers" value={stats.total_teachers} />
-          <StatCard label="Pending Verification" value={stats.pending_verification} />
-          <StatCard label="Verified Teachers" value={stats.verified_teachers} />
-          <StatCard label="Total Parents" value={stats.total_parents} />
-          <StatCard label="Total Bookings" value={stats.total_bookings} />
-          <StatCard label="Confirmed Bookings" value={stats.confirmed_bookings} />
-          <StatCard label="Total Revenue" value={formatRand(stats.total_revenue_cents)} />
-          <StatCard label="Pending Payouts" value={formatRand(stats.pending_payouts_cents)} />
+          <StatCard label="Total Teachers" value={stats.totalTeachers} />
+          <StatCard label="Pending Verification" value={stats.pendingVerification} />
+          <StatCard label="Verified Teachers" value={stats.verifiedTeachers} />
+          <StatCard label="Total Parents" value={stats.totalParents} />
+          <StatCard label="Total Bookings" value={stats.totalBookings} />
+          <StatCard label="Confirmed Bookings" value={stats.confirmedBookings} />
+          <StatCard label="Total Revenue" value={formatRand(stats.totalRevenueCents)} />
+          <StatCard label="Pending Payouts" value={formatRand(stats.pendingPayoutsCents)} />
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -254,25 +255,25 @@ export default function AdminPage() {
                 {teachers.map((t) => (
                   <TableRow key={t.id}>
                     <TableCell className="font-medium">
-                      {t.first_name} {t.last_name}
-                      {t.is_premium && (
+                      {t.firstName} {t.lastName}
+                      {t.isPremium && (
                         <Badge variant="outline" className="ml-2 text-xs">Premium</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.email}</TableCell>
                     <TableCell>
-                      <Badge variant={VERIFICATION_BADGE[t.verification_status] ?? "outline"}>
-                        {t.verification_status}
+                      <Badge variant={VERIFICATION_BADGE[t.verificationStatus] ?? "outline"}>
+                        {t.verificationStatus}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right text-sm">
-                      {t.hourly_rate_cents ? formatRand(t.hourly_rate_cents) + "/hr" : "—"}
+                      {t.hourlyRateCents ? formatRand(t.hourlyRateCents) + "/hr" : "—"}
                     </TableCell>
-                    <TableCell className="text-right text-sm">{t.document_count}</TableCell>
-                    <TableCell className="text-right text-sm">{t.subject_count}</TableCell>
+                    <TableCell className="text-right text-sm">{t.documentCount}</TableCell>
+                    <TableCell className="text-right text-sm">{t.subjectCount}</TableCell>
                     <TableCell>
                       <div className="flex gap-1 justify-end flex-wrap">
-                        {t.verification_status !== "verified" && (
+                        {t.verificationStatus !== "verified" && (
                           <Button
                             size="sm"
                             variant="default"
@@ -282,7 +283,7 @@ export default function AdminPage() {
                             Verify
                           </Button>
                         )}
-                        {t.verification_status !== "rejected" && (
+                        {t.verificationStatus !== "rejected" && (
                           <Button
                             size="sm"
                             variant="destructive"
@@ -292,7 +293,7 @@ export default function AdminPage() {
                             Reject
                           </Button>
                         )}
-                        {t.verification_status !== "suspended" && (
+                        {t.verificationStatus !== "suspended" && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -308,7 +309,7 @@ export default function AdminPage() {
                           disabled={actionLoading === `premium-${t.id}`}
                           onClick={() => handleTogglePremium(t.id)}
                         >
-                          {t.is_premium ? "Unpremium" : "Premium"}
+                          {t.isPremium ? "Unpremium" : "Premium"}
                         </Button>
                       </div>
                     </TableCell>
@@ -353,13 +354,13 @@ export default function AdminPage() {
               <TableBody>
                 {payouts.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.teacher_name}</TableCell>
-                    <TableCell className="text-right">{formatRand(p.amount_cents)}</TableCell>
+                    <TableCell className="font-medium">{p.teacherName}</TableCell>
+                    <TableCell className="text-right">{formatRand(p.amountCents)}</TableCell>
                     <TableCell>
                       <Badge variant={PAYOUT_BADGE[p.status] ?? "outline"}>{p.status}</Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(p.created_at).toLocaleDateString("en-ZA")}
+                      {new Date(p.createdAt).toLocaleDateString("en-ZA")}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1 justify-end">

@@ -361,7 +361,7 @@ Create a recurring weekly booking series.
 
 ## 7. Payment Endpoints
 
-### `POST /payments/payfast/notify`
+### `POST /bookings/payfast/itn`
 PayFast ITN (Instant Transaction Notification) webhook. **No auth** — validated by PayFast signature.
 
 ### `GET /payments/history` 🔒 Parent | Teacher
@@ -449,7 +449,7 @@ Platform metrics (active teachers, bookings this month, revenue, etc.).
 
 ## 12. Webhook Endpoints
 
-### `POST /webhooks/payfast`
+### `POST /bookings/payfast/itn`
 PayFast ITN handler. See [Payment Integration](./05-payment-integration.md) for full specification.
 
 ---

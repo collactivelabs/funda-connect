@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LeaveReviewDialog } from "@/components/parent/leave-review-dialog";
@@ -14,6 +15,7 @@ const STATUS_CONFIG: Record<BookingStatus, { label: string; variant: "default" |
   in_progress: { label: "In progress", variant: "default" },
   completed: { label: "Completed", variant: "outline" },
   cancelled: { label: "Cancelled", variant: "destructive" },
+  expired: { label: "Payment expired", variant: "destructive" },
   reviewed: { label: "Reviewed", variant: "outline" },
 };
 
@@ -43,6 +45,7 @@ interface Props {
 export function BookingList({ role }: Props) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     apiClient.bookings.list()
@@ -51,9 +54,35 @@ export function BookingList({ role }: Props) {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNow(new Date());
+    }, 30_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   function markReviewed(bookingId: string) {
     setBookings((prev) =>
       prev.map((b) => (b.id === bookingId ? { ...b, status: "reviewed" as BookingStatus } : b))
+    );
+  }
+
+  function updateBooking(bookingId: string, patch: Partial<Booking>) {
+    setBookings((prev) =>
+      prev.map((b) => (b.id === bookingId ? { ...b, ...patch } : b))
+    );
+  }
+
+  function cancelSeries(cancelledIds: string[]) {
+    setBookings((prev) =>
+      prev.map((b) =>
+        cancelledIds.includes(b.id)
+          ? { ...b, status: "cancelled" as BookingStatus }
+          : b
+      )
     );
   }
 
@@ -65,12 +94,18 @@ export function BookingList({ role }: Props) {
     );
   }
 
-  const now = new Date();
+  const terminalStatuses = new Set<BookingStatus>(["completed", "reviewed", "cancelled", "expired"]);
   const upcoming = bookings.filter(
-    (b) => new Date(b.scheduledAt) >= now && b.status !== "cancelled"
+    (booking) => {
+      const lessonEnd = new Date(new Date(booking.scheduledAt).getTime() + booking.durationMinutes * 60_000);
+      return !terminalStatuses.has(booking.status) && lessonEnd >= now;
+    }
   );
   const past = bookings.filter(
-    (b) => new Date(b.scheduledAt) < now || b.status === "cancelled"
+    (booking) => {
+      const lessonEnd = new Date(new Date(booking.scheduledAt).getTime() + booking.durationMinutes * 60_000);
+      return terminalStatuses.has(booking.status) || lessonEnd < now;
+    }
   );
 
   return (
@@ -80,7 +115,7 @@ export function BookingList({ role }: Props) {
           <h3 className="text-sm font-medium text-muted-foreground mb-3">Upcoming</h3>
           <div className="space-y-2">
             {upcoming.map((b) => (
-              <BookingRow key={b.id} booking={b} role={role} onReviewed={markReviewed} />
+              <BookingRow key={b.id} booking={b} role={role} now={now} onReviewed={markReviewed} onUpdated={updateBooking} onSeriesCancelled={cancelSeries} />
             ))}
           </div>
         </div>
@@ -90,7 +125,7 @@ export function BookingList({ role }: Props) {
           <h3 className="text-sm font-medium text-muted-foreground mb-3">Past</h3>
           <div className="space-y-2">
             {past.slice(0, 5).map((b) => (
-              <BookingRow key={b.id} booking={b} role={role} onReviewed={markReviewed} />
+              <BookingRow key={b.id} booking={b} role={role} now={now} onReviewed={markReviewed} onUpdated={updateBooking} onSeriesCancelled={cancelSeries} />
             ))}
           </div>
         </div>
@@ -102,24 +137,31 @@ export function BookingList({ role }: Props) {
 function BookingRow({
   booking,
   role,
+  now,
   onReviewed,
+  onUpdated,
+  onSeriesCancelled,
 }: {
   booking: Booking;
   role?: "parent" | "teacher";
+  now: Date;
   onReviewed: (id: string) => void;
+  onUpdated: (id: string, patch: Partial<Booking>) => void;
+  onSeriesCancelled: (ids: string[]) => void;
 }) {
+  const [acting, setActing] = useState(false);
   const statusCfg = STATUS_CONFIG[booking.status];
   const subjectName = booking.subject?.name;
   const learnerName = booking.learner
     ? `${booking.learner.firstName} ${booking.learner.lastName}`
     : null;
 
-  const now = new Date();
   const lessonStart = new Date(booking.scheduledAt);
   const lessonEnd = new Date(lessonStart.getTime() + booking.durationMinutes * 60_000);
   // Show join button from 10 min before start until lesson end
   const joinWindowOpen = new Date(lessonStart.getTime() - 10 * 60_000) <= now && now <= lessonEnd;
   const canJoin = booking.videoRoomUrl && joinWindowOpen && booking.status === "confirmed";
+  const canMarkComplete = role === "teacher" && booking.status === "confirmed" && now >= lessonStart;
   const canReview = role === "parent" && booking.status === "completed";
   // A child booking has a recurringBookingId pointing to its root
   const isChildRecurring = booking.isRecurring && !!booking.recurringBookingId;
@@ -166,6 +208,46 @@ function BookingRow({
               bookingId={booking.id}
               onReviewed={() => onReviewed(booking.id)}
             />
+          )}
+          {canMarkComplete && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs h-7"
+              disabled={acting}
+              onClick={async () => {
+                setActing(true);
+                try {
+                  await apiClient.bookings.complete(booking.id);
+                  onUpdated(booking.id, { status: "completed" });
+                } catch { /* ignore */ }
+                setActing(false);
+              }}
+            >
+              Mark complete
+            </Button>
+          )}
+          {booking.isRecurring && booking.status === "confirmed" && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="text-xs h-7"
+              disabled={acting}
+              onClick={async () => {
+                if (!confirm("Cancel all future lessons in this recurring series?")) return;
+                setActing(true);
+                try {
+                  const { data } = await apiClient.bookings.cancelSeries(booking.id, {
+                    reason: "Cancelled by user",
+                  });
+                  const ids = (data as Booking[]).map((b) => b.id);
+                  onSeriesCancelled(ids);
+                } catch { /* ignore */ }
+                setActing(false);
+              }}
+            >
+              Cancel series
+            </Button>
           )}
           <Badge variant={statusCfg.variant} className="text-xs">
             {statusCfg.label}

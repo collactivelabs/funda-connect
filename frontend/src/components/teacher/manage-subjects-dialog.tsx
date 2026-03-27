@@ -33,6 +33,8 @@ export function ManageSubjectsDialog({
   onChanged,
 }: ManageSubjectsDialogProps) {
   const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
+  const [subjectsLoading, setSubjectsLoading] = useState(false);
+  const [subjectsError, setSubjectsError] = useState<string | null>(null);
   const [current, setCurrent] = useState<TeacherSubject[]>(teacherSubjects);
   const [subjectId, setSubjectId] = useState("");
   const [curriculum, setCurriculum] = useState("");
@@ -47,9 +49,15 @@ export function ManageSubjectsDialog({
 
   useEffect(() => {
     if (!open) return;
+    setSubjectsLoading(true);
+    setSubjectsError(null);
     apiClient.subjects.list()
       .then(({ data }) => setAllSubjects(data as Subject[]))
-      .catch(() => null);
+      .catch(() => {
+        setAllSubjects([]);
+        setSubjectsError("Failed to load subjects.");
+      })
+      .finally(() => setSubjectsLoading(false));
   }, [open]);
 
   function toggleGrade(g: string) {
@@ -146,8 +154,8 @@ export function ManageSubjectsDialog({
           <div className="space-y-1.5">
             <Label>Subject</Label>
             <Select value={subjectId} onValueChange={(v) => setSubjectId(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select subject" />
+              <SelectTrigger disabled={subjectsLoading || allSubjects.length === 0}>
+                <SelectValue placeholder={subjectsLoading ? "Loading subjects…" : "Select subject"} />
               </SelectTrigger>
               <SelectContent>
                 {allSubjects.map((s) => (
@@ -155,6 +163,14 @@ export function ManageSubjectsDialog({
                 ))}
               </SelectContent>
             </Select>
+            {subjectsError && (
+              <p className="text-xs text-destructive">{subjectsError}</p>
+            )}
+            {!subjectsLoading && !subjectsError && allSubjects.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No subjects are available yet.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

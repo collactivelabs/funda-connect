@@ -66,9 +66,9 @@ PAYFAST_MERCHANT_ID=10000100
 PAYFAST_MERCHANT_KEY=46f0cd694581a
 PAYFAST_PASSPHRASE=jt7NOE43FZPn
 PAYFAST_SANDBOX=true
-PAYFAST_RETURN_URL=http://localhost:3001/booking/success
-PAYFAST_CANCEL_URL=http://localhost:3001/booking/cancelled
-PAYFAST_NOTIFY_URL=http://localhost:8000/api/v1/webhooks/payfast
+PAYFAST_RETURN_URL=http://localhost:3001/parent
+PAYFAST_CANCEL_URL=http://localhost:3001/parent
+PAYFAST_NOTIFY_URL=https://your-ngrok-domain.ngrok-free.app/api/v1/bookings/payfast/itn
 
 # ─── File Storage (Local dev) ───
 STORAGE_BACKEND=local

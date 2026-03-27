@@ -27,7 +27,7 @@ export function LoginForm() {
     setLoading(true);
     try {
       const { data } = await apiClient.auth.login({ email, password }) as { data: AuthResponse };
-      setAccessToken(data.access_token);
+      setAccessToken(data.accessToken);
       setUser(data.user);
       const dest = redirect ?? (data.user.role === "teacher" ? "/teacher" : "/parent");
       router.push(dest);

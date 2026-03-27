@@ -83,10 +83,8 @@ export function LeaveReviewDialog({ bookingId, teacherName, onReviewed }: Props)
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger>
-        <Button size="sm" variant="outline" type="button">
-          Leave review
-        </Button>
+      <DialogTrigger render={<Button size="sm" variant="outline" type="button" />}>
+        Leave review
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>

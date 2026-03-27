@@ -1,21 +1,43 @@
 import asyncio
 import uuid as uuid_lib
+from datetime import UTC, datetime, time, timedelta
 from uuid import UUID
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from pydantic import BaseModel, ConfigDict
+
 from app.core.config import settings
 from app.core.deps import get_db, require_teacher
+from app.core.redis import get_redis
 from app.models.booking import AvailabilitySlot
 from app.models.curriculum import Subject
-from app.models.payment import VerificationDocument
+from app.models.payment import Payout, VerificationDocument
 from app.models.teacher import TeacherProfile, TeacherSubject
-from app.schemas.booking import AvailabilitySlotResponse, SetAvailabilityRequest
+from app.schemas.booking import (
+    AvailabilitySlotResponse,
+    BookableSlotResponse,
+    SetAvailabilityRequest,
+)
+from app.services.scheduling import (
+    SAST,
+    are_slot_keys_available,
+    booking_lead_cutoff,
+    booking_occurrence_starts,
+    format_date_label,
+    format_time_label,
+    get_teacher_booking_conflicts,
+    is_duration_supported,
+    local_datetime,
+    normalize_utc,
+    slot_conflicts_with_bookings,
+    slot_lock_keys,
+)
 from app.schemas.teacher import (
     AddSubjectRequest,
     TeacherProfileResponse,
@@ -105,32 +127,7 @@ async def list_teachers(
     return [_teacher_response(p) for p in result.unique().all()]
 
 
-@router.get("/{teacher_id}", response_model=TeacherProfileResponse)
-async def get_teacher(teacher_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Get a teacher's public profile."""
-    profile = await db.scalar(
-        select(TeacherProfile)
-        .where(TeacherProfile.id == teacher_id)
-        .options(selectinload(TeacherProfile.subjects).selectinload(TeacherSubject.subject))
-        .options(selectinload(TeacherProfile.user))
-    )
-    if not profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
-    return _teacher_response(profile)
-
-
-@router.get("/{teacher_id}/availability", response_model=list[AvailabilitySlotResponse])
-async def get_teacher_availability(teacher_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Get a teacher's weekly availability (public, for booking)."""
-    result = await db.scalars(
-        select(AvailabilitySlot)
-        .where(AvailabilitySlot.teacher_id == teacher_id, AvailabilitySlot.is_active == True)  # noqa: E712
-        .order_by(AvailabilitySlot.day_of_week, AvailabilitySlot.start_time)
-    )
-    return result.all()
-
-
-# ── Teacher-only ──────────────────────────────────────────────
+# ── Teacher-only (must be registered BEFORE /{teacher_id} to avoid UUID parsing) ──
 
 @router.get("/me", response_model=TeacherProfileResponse)
 async def get_my_profile(
@@ -327,3 +324,182 @@ async def upload_document(
     notify_admin_verification_submitted.apply_async(args=[str(profile.id)], countdown=5)
 
     return doc
+
+
+# ── Earnings ──────────────────────────────────────────────────
+
+
+class PayoutResponse(BaseModel):
+    id: UUID
+    amount_cents: int
+    status: str
+    bank_reference: str | None = None
+    processed_at: datetime | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EarningsSummary(BaseModel):
+    total_earned_cents: int
+    pending_payout_cents: int
+    paid_out_cents: int
+    payouts: list[PayoutResponse]
+
+
+@router.get("/me/earnings", response_model=EarningsSummary)
+async def get_my_earnings(
+    payload: dict = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the teacher's earnings summary and payout history."""
+    profile = await _get_my_profile(payload, db)
+
+    payouts_result = await db.scalars(
+        select(Payout)
+        .where(Payout.teacher_id == profile.id)
+        .order_by(Payout.created_at.desc())
+    )
+    payouts = payouts_result.all()
+
+    total = sum(p.amount_cents for p in payouts)
+    pending = sum(p.amount_cents for p in payouts if p.status in ("pending", "processing"))
+    paid = sum(p.amount_cents for p in payouts if p.status == "paid")
+
+    return EarningsSummary(
+        total_earned_cents=total,
+        pending_payout_cents=pending,
+        paid_out_cents=paid,
+        payouts=payouts,
+    )
+
+
+# ── Public (parameterised — must come AFTER /me routes) ───────
+
+@router.get("/{teacher_id}", response_model=TeacherProfileResponse)
+async def get_teacher(teacher_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get a teacher's public profile."""
+    profile = await db.scalar(
+        select(TeacherProfile)
+        .where(TeacherProfile.id == teacher_id)
+        .options(selectinload(TeacherProfile.subjects).selectinload(TeacherSubject.subject))
+        .options(selectinload(TeacherProfile.user))
+    )
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
+    return _teacher_response(profile)
+
+
+@router.get("/{teacher_id}/availability", response_model=list[AvailabilitySlotResponse])
+async def get_teacher_availability(teacher_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get a teacher's weekly availability (public, for booking)."""
+    result = await db.scalars(
+        select(AvailabilitySlot)
+        .where(AvailabilitySlot.teacher_id == teacher_id, AvailabilitySlot.is_active == True)  # noqa: E712
+        .order_by(AvailabilitySlot.day_of_week, AvailabilitySlot.start_time)
+    )
+    return result.all()
+
+
+@router.get("/{teacher_id}/bookable-slots", response_model=list[BookableSlotResponse])
+async def get_teacher_bookable_slots(
+    teacher_id: UUID,
+    duration_minutes: int = Query(60, ge=30, le=180),
+    days: int = Query(settings.BOOKABLE_SLOT_DAYS, ge=1, le=42),
+    recurring_weeks: int = Query(1, ge=1, le=12),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return concrete upcoming bookable slots for a teacher."""
+    if not is_duration_supported(duration_minutes):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="duration_minutes must be in 30-minute increments",
+        )
+
+    teacher = await db.scalar(
+        select(TeacherProfile)
+        .where(TeacherProfile.id == teacher_id)
+        .options(selectinload(TeacherProfile.availability_slots))
+    )
+    if not teacher:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
+    if teacher.verification_status != "verified" or not teacher.is_listed:
+        return []
+
+    availability_slots = [slot for slot in teacher.availability_slots if slot.is_active]
+    if not availability_slots:
+        return []
+
+    now_utc = datetime.now(UTC)
+    lead_cutoff_local = booking_lead_cutoff(now_utc).astimezone(SAST)
+    start_date = lead_cutoff_local.date()
+    query_range_end_local = datetime.combine(
+        start_date + timedelta(days=days + ((recurring_weeks - 1) * 7)),
+        time.max,
+        tzinfo=SAST,
+    )
+
+    conflicts = await get_teacher_booking_conflicts(
+        db,
+        teacher_id,
+        range_start=lead_cutoff_local.astimezone(UTC),
+        range_end=query_range_end_local.astimezone(UTC),
+        now_utc=now_utc,
+    )
+    redis = await get_redis()
+
+    slots: list[BookableSlotResponse] = []
+    seen_start_times: set[datetime] = set()
+    step = timedelta(minutes=30)
+    duration_delta = timedelta(minutes=duration_minutes)
+
+    for day_offset in range(days):
+        current_date = start_date + timedelta(days=day_offset)
+        current_day_slots = sorted(
+            (
+                slot
+                for slot in availability_slots
+                if slot.day_of_week == current_date.weekday()
+            ),
+            key=lambda slot: (slot.start_time, slot.end_time),
+        )
+
+        for availability_slot in current_day_slots:
+            candidate_start_local = local_datetime(current_date, availability_slot.start_time)
+            availability_end_local = local_datetime(current_date, availability_slot.end_time)
+
+            while candidate_start_local + duration_delta <= availability_end_local:
+                if candidate_start_local < lead_cutoff_local:
+                    candidate_start_local += step
+                    continue
+
+                candidate_start_utc = normalize_utc(candidate_start_local.astimezone(UTC))
+                if candidate_start_utc in seen_start_times:
+                    candidate_start_local += step
+                    continue
+
+                occurrence_starts = booking_occurrence_starts(candidate_start_utc, recurring_weeks)
+
+                if slot_conflicts_with_bookings(conflicts, occurrence_starts, duration_minutes, now_utc):
+                    candidate_start_local += step
+                    continue
+
+                lock_keys = slot_lock_keys(teacher.id, occurrence_starts, duration_minutes)
+                if not await are_slot_keys_available(redis, lock_keys):
+                    candidate_start_local += step
+                    continue
+
+                candidate_end_utc = candidate_start_utc + duration_delta
+                slots.append(
+                    BookableSlotResponse(
+                        start_at=candidate_start_utc,
+                        end_at=candidate_end_utc,
+                        date=current_date,
+                        date_label=format_date_label(current_date),
+                        time_label=format_time_label(candidate_start_utc, candidate_end_utc),
+                    )
+                )
+                seen_start_times.add(candidate_start_utc)
+                candidate_start_local += step
+
+    return slots

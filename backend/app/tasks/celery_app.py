@@ -23,6 +23,11 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     beat_schedule={
+        # Release expired payment holds so slots become bookable again
+        "expire-pending-booking-holds": {
+            "task": "app.tasks.lessons.expire_pending_booking_holds",
+            "schedule": 60,
+        },
         # Mark completed lessons and create payout records every 15 minutes
         "auto-complete-lessons": {
             "task": "app.tasks.lessons.auto_complete_lessons",

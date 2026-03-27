@@ -1,4 +1,4 @@
-.PHONY: help up down build logs shell-backend shell-frontend migrate migrate-create lint test
+.PHONY: help up down build logs shell-backend shell-frontend migrate migrate-create lint test promote-admin payfast-tunnel payfast-webhook-path
 
 # ── Config ────────────────────────────────────────────────────
 BACKEND_SERVICE = backend
@@ -63,6 +63,17 @@ typecheck-backend: ## Run mypy type checking on backend
 
 test-backend: ## Run backend tests
 	docker compose exec $(BACKEND_SERVICE) pytest tests/ -v
+
+promote-admin: ## Promote an existing user to admin (usage: make promote-admin EMAIL=you@example.com)
+	@test -n "$(EMAIL)" || (echo "Usage: make promote-admin EMAIL=labs@example.com" && exit 1)
+	docker compose exec $(BACKEND_SERVICE) python -m app.scripts.promote_admin --email "$(EMAIL)"
+
+payfast-tunnel: ## Start an ngrok tunnel for PayFast ITN callbacks on backend port 8000
+	ngrok http 8000
+
+payfast-webhook-path: ## Show the public PayFast ITN path to append to your tunnel URL
+	@echo "Set PAYFAST_NOTIFY_URL to:"
+	@echo "  https://<your-ngrok-domain>/api/v1/bookings/payfast/itn"
 
 # ── Frontend ─────────────────────────────────────────────────
 shell-frontend: ## Open a shell in the frontend container

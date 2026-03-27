@@ -8,12 +8,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
+import { hasUploadedAllRequiredDocuments } from "@/lib/teacher-documents";
 import { EditProfileDialog } from "./edit-profile-dialog";
 import { SetAvailabilitySheet } from "./set-availability-sheet";
 import { ManageSubjectsDialog } from "./manage-subjects-dialog";
 import { UploadDocumentDialog } from "./upload-document-dialog";
+import { EarningsSection } from "./earnings-section";
+import { OnboardingChecklist } from "./onboarding-checklist";
 import { BookingList } from "@/components/shared/booking-list";
-import type { AvailabilitySlot, TeacherProfile, TeacherSubject } from "@/types";
+import type { AvailabilitySlot, TeacherProfile, VerificationDocument } from "@/types";
 
 const VERIFICATION_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pending: { label: "Pending verification", variant: "secondary" },
@@ -26,23 +29,31 @@ const VERIFICATION_LABELS: Record<string, { label: string; variant: "default" | 
 export function TeacherDashboard() {
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
+  const [documents, setDocuments] = useState<VerificationDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [availOpen, setAvailOpen] = useState(false);
   const [subjectsOpen, setSubjectsOpen] = useState(false);
 
-  useEffect(() => {
+  function loadDashboard() {
+    setLoading(true);
+    setLoadError(false);
     Promise.all([
       apiClient.teachers.getMe(),
       apiClient.teachers.getAvailability(),
+      apiClient.teachers.listDocuments(),
     ])
-      .then(([profileRes, availRes]) => {
+      .then(([profileRes, availRes, documentsRes]) => {
         setProfile(profileRes.data as TeacherProfile);
         setAvailability(availRes.data as AvailabilitySlot[]);
+        setDocuments(documentsRes.data as VerificationDocument[]);
       })
-      .catch(() => null)
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadDashboard(); }, []);
 
   if (loading) {
     return (
@@ -55,47 +66,69 @@ export function TeacherDashboard() {
     );
   }
 
-  const statusInfo = VERIFICATION_LABELS[profile?.verificationStatus ?? "pending"];
+  if (loadError || !profile) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4">
+        <p className="text-muted-foreground">Failed to load your profile.</p>
+        <Button variant="outline" onClick={loadDashboard}>Try again</Button>
+      </div>
+    );
+  }
+
+  const statusInfo = VERIFICATION_LABELS[profile.verificationStatus] ?? VERIFICATION_LABELS.pending;
+  const documentsComplete = hasUploadedAllRequiredDocuments(documents);
 
   return (
     <div className="space-y-8">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            {profile?.user.firstName} {profile?.user.lastName}
+            {profile.user.firstName} {profile.user.lastName}
           </h1>
           <p className="text-muted-foreground">
-            {profile?.headline ?? "Complete your profile to start receiving bookings."}
+            {profile.headline ?? "Complete your profile to start receiving bookings."}
           </p>
         </div>
         <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
       </div>
 
       {/* Verification prompt */}
-      {profile?.verificationStatus === "pending" && (
+      {profile.verificationStatus === "pending" && (
         <Alert>
           <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
             <span>
-              Your account is pending verification. Upload your SACE certificate and qualification documents to get verified and start listing lessons.
+              {documentsComplete
+                ? "All required verification documents have been uploaded. Your account is now waiting for admin review."
+                : "Your account is pending verification. Upload all five required verification documents to move your account into review."}
             </span>
-            <UploadDocumentDialog />
+            <UploadDocumentDialog documents={documents} onDocumentsChange={setDocuments} />
           </AlertDescription>
         </Alert>
       )}
+
+      {/* Onboarding checklist */}
+      <OnboardingChecklist
+        profile={profile}
+        availability={availability}
+        documents={documents}
+        onEditProfile={() => setEditOpen(true)}
+        onManageSubjects={() => setSubjectsOpen(true)}
+        onSetAvailability={() => setAvailOpen(true)}
+      />
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total Lessons</CardDescription>
-            <CardTitle className="text-3xl">{profile?.totalLessons ?? 0}</CardTitle>
+            <CardTitle className="text-3xl">{profile.totalLessons}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Average Rating</CardDescription>
             <CardTitle className="text-3xl">
-              {profile?.averageRating ? `${profile.averageRating.toFixed(1)} ★` : "—"}
+              {profile.averageRating ? `${profile.averageRating.toFixed(1)} ★` : "—"}
             </CardTitle>
           </CardHeader>
         </Card>
@@ -103,7 +136,7 @@ export function TeacherDashboard() {
           <CardHeader className="pb-2">
             <CardDescription>Hourly Rate</CardDescription>
             <CardTitle className="text-3xl">
-              {profile?.hourlyRateCents
+              {profile.hourlyRateCents
                 ? `R${(profile.hourlyRateCents / 100).toFixed(0)}`
                 : "Not set"}
             </CardTitle>
@@ -124,7 +157,7 @@ export function TeacherDashboard() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Subjects added</span>
               <div className="flex items-center gap-2">
-                <span className="font-medium">{profile?.subjects.length ?? 0}</span>
+                <span className="font-medium">{profile.subjects.length ?? 0}</span>
                 <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => setSubjectsOpen(true)}>
                   Manage
                 </Button>
@@ -134,7 +167,7 @@ export function TeacherDashboard() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Curricula</span>
               <div className="flex gap-1 flex-wrap justify-end">
-                {profile?.curricula.length
+                {profile.curricula.length
                   ? profile.curricula.map((c) => <Badge key={c} variant="secondary">{c}</Badge>)
                   : <span className="text-muted-foreground">None</span>
                 }
@@ -143,7 +176,7 @@ export function TeacherDashboard() {
             <Separator />
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Province</span>
-              <span className="font-medium">{profile?.province ?? "Not set"}</span>
+              <span className="font-medium">{profile.province ?? "Not set"}</span>
             </div>
             <Separator />
             <div className="flex items-center justify-between text-sm">
@@ -153,8 +186,8 @@ export function TeacherDashboard() {
             <Separator />
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Listed on marketplace</span>
-              <Badge variant={profile?.isListed ? "default" : "secondary"}>
-                {profile?.isListed ? "Listed" : "Unlisted"}
+              <Badge variant={profile.isListed ? "default" : "secondary"}>
+                {profile.isListed ? "Listed" : "Unlisted"}
               </Badge>
             </div>
           </CardContent>
@@ -168,6 +201,14 @@ export function TeacherDashboard() {
         <h2 className="mb-4 text-lg font-semibold">Lessons</h2>
         <BookingList role="teacher" />
       </section>
+
+      {/* Earnings */}
+      <section>
+        <h2 className="mb-4 text-lg font-semibold">Earnings</h2>
+        <EarningsSection />
+      </section>
+
+      <Separator />
 
       {/* Quick actions */}
       <section>
@@ -206,27 +247,23 @@ export function TeacherDashboard() {
       </section>
 
       {/* Modals */}
-      {profile && (
-        <EditProfileDialog
-          profile={profile}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          onSaved={(updated) => setProfile(updated)}
-        />
-      )}
+      <EditProfileDialog
+        profile={profile}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSaved={(updated) => setProfile(updated)}
+      />
       <SetAvailabilitySheet
         open={availOpen}
         onOpenChange={setAvailOpen}
         onSaved={(slots) => setAvailability(slots)}
       />
-      {profile && (
-        <ManageSubjectsDialog
-          teacherSubjects={profile.subjects}
-          open={subjectsOpen}
-          onOpenChange={setSubjectsOpen}
-          onChanged={(subjects) => setProfile((prev) => prev ? { ...prev, subjects } : prev)}
-        />
-      )}
+      <ManageSubjectsDialog
+        teacherSubjects={profile.subjects}
+        open={subjectsOpen}
+        onOpenChange={setSubjectsOpen}
+        onChanged={(subjects) => setProfile((prev) => prev ? { ...prev, subjects } : prev)}
+      />
     </div>
   );
 }

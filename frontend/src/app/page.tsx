@@ -1,10 +1,24 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useAuthStore } from "@/stores/auth.store";
 
 export default function HomePage() {
+  const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+
+  // Redirect logged-in users straight to their dashboard
+  useEffect(() => {
+    if (!user) return;
+    const dest =
+      user.role === "admin" ? "/admin" : user.role === "teacher" ? "/teacher" : "/parent";
+    router.replace(dest);
+  }, [user, router]);
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-6 text-center">
       <div className="space-y-4">

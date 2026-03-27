@@ -16,7 +16,7 @@ export interface AuthTokens {
 }
 
 export interface AuthResponse {
-  access_token: string;
+  accessToken: string;
   token_type: string;
   user: User;
 }
@@ -30,6 +30,13 @@ export type VerificationStatus =
   | "suspended";
 
 export type Curriculum = "CAPS" | "Cambridge" | "IEB";
+export type VerificationDocumentType =
+  | "id_document"
+  | "qualification"
+  | "sace_certificate"
+  | "nrso_clearance"
+  | "reference_letter";
+export type VerificationDocumentStatus = "pending" | "approved" | "rejected";
 
 export interface TeacherProfile {
   id: string;
@@ -56,6 +63,14 @@ export interface TeacherSubject {
   subjectName: string;
   gradeLevels: string[];
   curriculum: Curriculum;
+}
+
+export interface VerificationDocument {
+  id: string;
+  documentType: VerificationDocumentType;
+  fileUrl: string;
+  fileName: string;
+  status: VerificationDocumentStatus;
 }
 
 // ── Parent & Learner ──────────────────────────────────────────
@@ -86,6 +101,7 @@ export type BookingStatus =
   | "in_progress"
   | "completed"
   | "cancelled"
+  | "expired"
   | "reviewed";
 
 export interface Booking {
@@ -107,6 +123,14 @@ export interface Booking {
   // Nested snippets (populated on list endpoint)
   learner?: { firstName: string; lastName: string; grade: string } | null;
   subject?: { id: string; name: string } | null;
+}
+
+export interface BookableSlot {
+  startAt: string;
+  endAt: string;
+  date: string;
+  dateLabel: string;
+  timeLabel: string;
 }
 
 // ── Reviews ───────────────────────────────────────────────────

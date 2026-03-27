@@ -94,6 +94,9 @@ make migrate-create MSG="add table" # Generate a new migration
 make lint            # Lint backend + frontend
 make test            # Run all tests
 make db-shell        # Open psql shell
+make promote-admin EMAIL=you@example.com  # Promote an existing user to admin
+make payfast-tunnel  # Start an ngrok tunnel for PayFast webhooks
+make payfast-webhook-path  # Show the public ITN path to use in PAYFAST_NOTIFY_URL
 ```
 
 ---
@@ -118,6 +121,9 @@ PAYFAST_MERCHANT_ID=
 PAYFAST_MERCHANT_KEY=
 PAYFAST_PASSPHRASE=
 PAYFAST_SANDBOX=true               # Set false in production
+PAYFAST_RETURN_URL=http://localhost:3001/parent
+PAYFAST_CANCEL_URL=http://localhost:3001/parent
+PAYFAST_NOTIFY_URL=               # e.g. https://<your-ngrok-domain>/api/v1/bookings/payfast/itn
 
 # daily.co (video rooms)
 DAILY_API_KEY=
@@ -142,6 +148,26 @@ MEILISEARCH_MASTER_KEY=
 PLATFORM_COMMISSION_RATE=0.175     # 17.5%
 ALLOWED_ORIGINS=http://localhost:3001
 ```
+
+### Local PayFast Webhooks
+
+PayFast cannot send ITN webhooks to `localhost`, so local payment testing needs a public tunnel.
+
+```bash
+# 1. Start the backend if it is not running
+make up
+
+# 2. Start an ngrok tunnel to the backend
+make payfast-tunnel
+
+# 3. Copy the HTTPS ngrok URL and set it in .env
+PAYFAST_NOTIFY_URL=https://<your-ngrok-domain>/api/v1/bookings/payfast/itn
+
+# 4. Restart the backend so the new env var is loaded
+docker compose restart backend
+```
+
+`PAYFAST_RETURN_URL` and `PAYFAST_CANCEL_URL` can stay on `http://localhost:3001/parent` for local browser testing.
 
 ---
 

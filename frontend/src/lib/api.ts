@@ -3,10 +3,31 @@ import type { ApiError } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// snake_case → camelCase deep transformer for API responses
+function toCamelCase(str: string): string {
+  return str.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+function transformKeys(data: unknown): unknown {
+  if (Array.isArray(data)) return data.map(transformKeys);
+  if (data !== null && typeof data === "object" && !(data instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(data as Record<string, unknown>).map(([k, v]) => [toCamelCase(k), transformKeys(v)])
+    );
+  }
+  return data;
+}
+
 export const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
   headers: { "Content-Type": "application/json" },
   withCredentials: true, // send HttpOnly refresh token cookie
+});
+
+// Transform all response data from snake_case to camelCase
+api.interceptors.response.use((res) => {
+  if (res.data) res.data = transformKeys(res.data);
+  return res;
 });
 
 // Attach access token from memory on every request
@@ -62,11 +83,23 @@ export const apiClient = {
     getAvailability: () => api.get("/teachers/me/availability"),
     setAvailability: (body: unknown) => api.put("/teachers/me/availability", body),
     getPublicAvailability: (id: string) => api.get(`/teachers/${id}/availability`),
+    getBookableSlots: (
+      id: string,
+      params: { durationMinutes: number; recurringWeeks?: number; days?: number }
+    ) =>
+      api.get(`/teachers/${id}/bookable-slots`, {
+        params: {
+          duration_minutes: params.durationMinutes,
+          recurring_weeks: params.recurringWeeks,
+          days: params.days,
+        },
+      }),
     listDocuments: () => api.get("/teachers/me/documents"),
     uploadDocument: (documentType: string, form: FormData) =>
       api.post(`/teachers/me/documents?document_type=${encodeURIComponent(documentType)}`, form, {
         headers: { "Content-Type": "multipart/form-data" },
       }),
+    getEarnings: () => api.get("/teachers/me/earnings"),
   },
   parents: {
     getLearners: () => api.get("/parents/me/learners"),
@@ -81,6 +114,9 @@ export const apiClient = {
     get: (id: string) => api.get(`/bookings/${id}`),
     cancel: (id: string, body: unknown) =>
       api.post(`/bookings/${id}/cancel`, body),
+    complete: (id: string) => api.post(`/bookings/${id}/complete`),
+    cancelSeries: (id: string, body: unknown) =>
+      api.post(`/bookings/${id}/cancel-series`, body),
   },
   subjects: {
     list: () => api.get("/subjects"),

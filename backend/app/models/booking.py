@@ -46,8 +46,10 @@ class Booking(UUIDMixin, TimestampMixin, Base):
     # Scheduling
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     # State machine: pending_payment → confirmed → in_progress → completed → reviewed
+    # pending_payment can also lapse into expired if the payment hold times out.
     status: Mapped[str] = mapped_column(String(30), default="pending_payment", index=True)
 
     # Pricing (ZAR in cents)
