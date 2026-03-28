@@ -10,7 +10,7 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Harden authentication flows next.
 - [ ] Build the full admin verification workflow.
 - [ ] Complete the remaining payments/reporting/refund work.
-- [ ] Finish notifications, security, and documentation cleanup.
+- [ ] Finish security and documentation cleanup.
 
 ## 1. Foundation And Tooling
 
@@ -55,10 +55,11 @@ This file tracks outstanding work identified by comparing the original technical
 
 ## 6. Notifications
 
-- [ ] Add notification center endpoints and UI.
-- [ ] Add notification preferences management.
+- [x] Add notification center endpoints and UI.
+- [x] Add notification preferences management.
+- [x] Add in-app notifications for key booking, verification, payout, and refund events.
 - [ ] Add SMS delivery if still required.
-- [ ] Add push/in-app notifications if still required.
+- [ ] Add push delivery if still required.
 - [ ] Add notification delivery tracking where useful.
 
 ## 7. Search And Reference Data

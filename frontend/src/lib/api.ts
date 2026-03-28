@@ -1,5 +1,12 @@
 import axios, { type AxiosError } from "axios";
-import type { ApiError, AuthSession, ParentPaymentHistorySummary, ParentPaymentReceipt } from "@/types";
+import type {
+  ApiError,
+  AuthSession,
+  NotificationListResponse,
+  NotificationPreferences,
+  ParentPaymentHistorySummary,
+  ParentPaymentReceipt,
+} from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -79,6 +86,19 @@ export const apiClient = {
     resetPassword: (body: unknown) => api.post("/auth/reset-password", body),
     logout: () => api.post("/auth/logout"),
     me: () => api.get("/auth/me"),
+  },
+  notifications: {
+    list: () => api.get<NotificationListResponse>("/notifications"),
+    markRead: (notificationId: string) => api.put(`/notifications/${notificationId}/read`),
+    markAllRead: () => api.put("/notifications/read-all"),
+    getPreferences: () => api.get<NotificationPreferences>("/notifications/preferences"),
+    updatePreferences: (body: Partial<NotificationPreferences>) =>
+      api.put<NotificationPreferences>("/notifications/preferences", {
+        in_app_enabled: body.inAppEnabled,
+        email_enabled: body.emailEnabled,
+        sms_enabled: body.smsEnabled,
+        push_enabled: body.pushEnabled,
+      }),
   },
   teachers: {
     search: (params: unknown) => api.get("/teachers", { params }),

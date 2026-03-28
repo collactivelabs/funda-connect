@@ -31,6 +31,31 @@ export interface AuthSession {
   ipAddress?: string | null;
 }
 
+export interface NotificationItem {
+  id: string;
+  type: string;
+  channel: string;
+  title: string;
+  body: string;
+  metadata?: Record<string, unknown> | null;
+  isRead: boolean;
+  sentAt: string;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface NotificationListResponse {
+  items: NotificationItem[];
+  unreadCount: number;
+}
+
+export interface NotificationPreferences {
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  smsEnabled: boolean;
+  pushEnabled: boolean;
+}
+
 // ── Teacher ───────────────────────────────────────────────────
 export type VerificationStatus =
   | "pending"

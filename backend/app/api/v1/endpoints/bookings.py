@@ -1,6 +1,7 @@
 import hashlib
 import urllib.parse
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -22,6 +23,7 @@ from app.services.prepaid_series import (
     recurring_weeks_from_metadata,
     series_total_amount_cents,
 )
+from app.services.notifications import create_in_app_notification
 from app.services.refunds import calculate_booking_cancellation_outcome
 from app.services.scheduling import (
     acquire_slot_hold,
@@ -50,10 +52,60 @@ router = APIRouter()
 
 PAYFAST_SANDBOX_URL = "https://sandbox.payfast.co.za/eng/process"
 PAYFAST_LIVE_URL = "https://www.payfast.co.za/eng/process"
+SAST = ZoneInfo("Africa/Johannesburg")
 
 
 def _requested_recurring_weeks(body: CreateBookingRequest) -> int:
     return body.recurring_weeks if body.is_recurring and body.recurring_weeks else 1
+
+
+def _lesson_time_label(value: datetime) -> str:
+    return normalize_utc(value).astimezone(SAST).strftime("%a, %-d %b %Y at %H:%M SAST")
+
+
+async def _booking_participant_user_ids(
+    booking: Booking,
+    db: AsyncSession,
+) -> tuple[UUID | None, UUID | None]:
+    parent_user_id = await db.scalar(
+        select(ParentProfile.user_id).where(ParentProfile.id == booking.parent_id)
+    )
+    teacher_user_id = await db.scalar(
+        select(TeacherProfile.user_id).where(TeacherProfile.id == booking.teacher_id)
+    )
+    return parent_user_id, teacher_user_id
+
+
+async def _notify_booking_participants(
+    booking: Booking,
+    db: AsyncSession,
+    *,
+    parent_title: str,
+    parent_body: str,
+    teacher_title: str,
+    teacher_body: str,
+    notification_type: str,
+    metadata: dict | None = None,
+) -> None:
+    parent_user_id, teacher_user_id = await _booking_participant_user_ids(booking, db)
+    if parent_user_id:
+        await create_in_app_notification(
+            db,
+            user_id=parent_user_id,
+            notification_type=notification_type,
+            title=parent_title,
+            body=parent_body,
+            metadata=metadata,
+        )
+    if teacher_user_id:
+        await create_in_app_notification(
+            db,
+            user_id=teacher_user_id,
+            notification_type=notification_type,
+            title=teacher_title,
+            body=teacher_body,
+            metadata=metadata,
+        )
 
 
 async def _assert_booking_access(booking: Booking, payload: dict, db: AsyncSession) -> None:
@@ -583,6 +635,16 @@ async def reschedule_booking(
     )
     if refreshed_booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    await _notify_booking_participants(
+        refreshed_booking,
+        db,
+        parent_title="Lesson rescheduled",
+        parent_body=f"Your lesson has been moved to {_lesson_time_label(refreshed_booking.scheduled_at)}.",
+        teacher_title="Lesson rescheduled",
+        teacher_body=f"This lesson has been moved to {_lesson_time_label(refreshed_booking.scheduled_at)}.",
+        notification_type="booking_rescheduled",
+        metadata={"booking_id": str(refreshed_booking.id)},
+    )
     return refreshed_booking
 
 
@@ -657,6 +719,17 @@ async def cancel_booking(
         room_name = room_url.rstrip("/").split("/")[-1]
         asyncio.create_task(delete_room(room_name))
 
+    await _notify_booking_participants(
+        booking,
+        db,
+        parent_title="Lesson cancelled",
+        parent_body=f"This lesson scheduled for {_lesson_time_label(booking.scheduled_at)} has been cancelled.",
+        teacher_title="Lesson cancelled",
+        teacher_body=f"This lesson scheduled for {_lesson_time_label(booking.scheduled_at)} has been cancelled.",
+        notification_type="booking_cancelled",
+        metadata={"booking_id": str(booking.id), "cancelled_by_role": actor_role},
+    )
+
     return booking
 
 
@@ -694,6 +767,16 @@ async def complete_booking(
         )
 
     booking.status = "completed"
+    await _notify_booking_participants(
+        booking,
+        db,
+        parent_title="Lesson marked complete",
+        parent_body=f"Your lesson from {_lesson_time_label(booking.scheduled_at)} has been marked complete.",
+        teacher_title="Lesson marked complete",
+        teacher_body=f"You marked the lesson from {_lesson_time_label(booking.scheduled_at)} as complete.",
+        notification_type="booking_completed",
+        metadata={"booking_id": str(booking.id)},
+    )
     return booking
 
 
@@ -758,6 +841,16 @@ async def raise_booking_dispute(
         )
     )
     booking.status = "disputed"
+    await _notify_booking_participants(
+        booking,
+        db,
+        parent_title="Dispute opened",
+        parent_body="A dispute has been opened for this lesson. An admin will review it.",
+        teacher_title="Dispute opened",
+        teacher_body="A dispute has been opened for this lesson. An admin will review it.",
+        notification_type="booking_disputed",
+        metadata={"booking_id": str(booking.id), "raised_by_role": payload.get("role", "unknown")},
+    )
     return booking
 
 
@@ -975,6 +1068,17 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
 
         await db.commit()
         await release_slot_hold(redis, hold_keys)
+
+        await _notify_booking_participants(
+            booking,
+            db,
+            parent_title="Booking confirmed",
+            parent_body=f"Your lesson for {_lesson_time_label(booking.scheduled_at)} is confirmed.",
+            teacher_title="New lesson confirmed",
+            teacher_body=f"A lesson for {_lesson_time_label(booking.scheduled_at)} has been confirmed.",
+            notification_type="booking_confirmed",
+            metadata={"booking_id": str(booking.id)},
+        )
 
         # Fire confirmation emails (after DB commit via Celery)
         from app.tasks.notifications import send_booking_confirmation

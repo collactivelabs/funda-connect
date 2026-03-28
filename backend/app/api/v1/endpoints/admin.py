@@ -14,6 +14,7 @@ from app.models.parent import ParentProfile
 from app.models.payment import Dispute, Payment, Payout, Refund, VerificationDocument
 from app.models.teacher import TeacherProfile, TeacherSubject
 from app.schemas.teacher import DocumentAccessResponse, VerificationDocumentResponse
+from app.services.notifications import create_in_app_notification
 from app.services.refunds import payment_status_after_refund
 from app.services.verification_documents import (
     build_document_access_url,
@@ -444,6 +445,18 @@ async def verify_teacher(
         args=[str(teacher_id), teacher.verification_status, body.notes],
         countdown=2,
     )
+    await create_in_app_notification(
+        db,
+        user_id=teacher.user_id,
+        notification_type="teacher_verification_result",
+        title="Verification status updated",
+        body=(
+            "Your teacher profile has been verified and is now live."
+            if teacher.verification_status == "verified"
+            else f"Your teacher verification status is now '{teacher.verification_status}'."
+        ),
+        metadata={"teacher_id": str(teacher.id), "status": teacher.verification_status},
+    )
 
     await db.flush()
     return {"status": teacher.verification_status, "is_listed": teacher.is_listed}
@@ -528,6 +541,18 @@ async def update_payout(
         payout.notes = body.notes
     if body.status == "paid":
         payout.processed_at = datetime.now(UTC)
+        teacher_user_id = await db.scalar(
+            select(TeacherProfile.user_id).where(TeacherProfile.id == payout.teacher_id)
+        )
+        if teacher_user_id:
+            await create_in_app_notification(
+                db,
+                user_id=teacher_user_id,
+                notification_type="payout_paid",
+                title="Payout processed",
+                body=f"Your payout of R{payout.amount_cents / 100:.2f} has been marked as paid.",
+                metadata={"payout_id": str(payout.id)},
+            )
         from app.tasks.notifications import send_payout_notification
 
         send_payout_notification.apply_async(args=[str(payout_id)], countdown=3)
@@ -592,7 +617,7 @@ async def update_refund(
     refund = await db.scalar(
         select(Refund)
         .where(Refund.id == refund_id)
-        .options(selectinload(Refund.payment))
+        .options(selectinload(Refund.payment).selectinload(Payment.booking))
     )
     if not refund:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refund not found")
@@ -616,6 +641,18 @@ async def update_refund(
             refund.payment.amount_cents,
             refund.amount_cents,
         )
+        parent_user_id = await db.scalar(
+            select(ParentProfile.user_id).where(ParentProfile.id == refund.payment.booking.parent_id)
+        )
+        if parent_user_id:
+            await create_in_app_notification(
+                db,
+                user_id=parent_user_id,
+                notification_type="refund_processed",
+                title="Refund processed",
+                body=f"Your refund of R{refund.amount_cents / 100:.2f} has been processed.",
+                metadata={"refund_id": str(refund.id), "booking_id": str(refund.payment.booking_id)},
+            )
         from app.tasks.notifications import send_refund_notification
 
         send_refund_notification.apply_async(args=[str(refund.id)], countdown=3)
@@ -746,5 +783,26 @@ async def resolve_dispute(
                 refund.requested_by_role = "admin"
                 refund.policy_code = "dispute_refund"
                 refund.notes = "Created from dispute resolution. Process manually in PayFast and then mark refunded."
+
+    parent_user_id = await db.scalar(
+        select(ParentProfile.user_id).where(ParentProfile.id == booking.parent_id)
+    )
+    teacher_user_id = await db.scalar(
+        select(TeacherProfile.user_id).where(TeacherProfile.id == booking.teacher_id)
+    )
+    for user_id in (parent_user_id, teacher_user_id):
+        if user_id:
+            await create_in_app_notification(
+                db,
+                user_id=user_id,
+                notification_type="dispute_resolved",
+                title="Dispute resolved",
+                body=(
+                    "An admin resolved the dispute and restored the lesson as completed."
+                    if body.resolution == "completed"
+                    else "An admin resolved the dispute and moved it into the refund flow."
+                ),
+                metadata={"dispute_id": str(dispute.id), "booking_id": str(booking.id), "resolution": body.resolution},
+            )
 
     return {"id": dispute.id, "status": dispute.status, "resolution": dispute.resolution}

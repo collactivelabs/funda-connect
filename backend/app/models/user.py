@@ -26,6 +26,12 @@ class User(UUIDMixin, TimestampMixin, Base):
     parent_profile: Mapped["ParentProfile | None"] = relationship(  # noqa: F821
         "ParentProfile", back_populates="user", uselist=False
     )
+    notifications: Mapped[list["Notification"]] = relationship(  # noqa: F821
+        "Notification", back_populates="user", cascade="all, delete-orphan"
+    )
+    notification_preferences: Mapped["NotificationPreference | None"] = relationship(  # noqa: F821
+        "NotificationPreference", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
 
     @property
     def full_name(self) -> str:

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { NotificationCenter } from "@/components/shared/notification-center";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth.store";
@@ -58,6 +59,7 @@ export function DashboardNav() {
         <div className="flex items-center gap-3">
           {user && (
             <>
+              <NotificationCenter />
               <span className="hidden text-sm text-muted-foreground sm:block">
                 {user.firstName} {user.lastName}
               </span>

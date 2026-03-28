@@ -185,7 +185,8 @@ docker compose restart backend
 - **Document verification** — teachers upload ID and qualifications to S3; admin reviews and approves
 - **Automated lifecycle** — Celery Beat marks lessons complete 15 min after end and queues payouts
 - **Weekly payouts** — Celery Beat batches teacher payouts every Monday
-- **Email notifications** — booking confirmation, verification result, payout processed
+- **Notification center** — in-app inbox with unread state, mark-read actions, and notification preferences
+- **Email notifications** — booking confirmation, verification result, payout processed, refund updates
 - **Admin dashboard** — teacher verification workflow, payout status management, platform stats
 
 ---
@@ -200,6 +201,7 @@ All endpoints are under `/api/v1/`. Interactive docs at `http://localhost:8000/d
 | `/teachers` | Profile, availability, subjects, documents, search |
 | `/parents` | Profile, learners |
 | `/bookings` | Create, list, get, cancel; PayFast ITN webhook |
+| `/notifications` | Inbox, unread state, and notification preferences |
 | `/reviews` | Submit review, list by teacher |
 | `/subjects` | Subject catalogue |
 | `/admin` | Stats, teacher verification, payout management |

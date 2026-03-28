@@ -407,6 +407,9 @@ Mark all notifications as read.
 ### `PUT /notifications/preferences` 🔒 Authenticated
 Update notification preferences (email, SMS, push toggles).
 
+### `GET /notifications/preferences` 🔒 Authenticated
+Fetch the current notification preference values for the signed-in user.
+
 ---
 
 ## 10. Reference Data Endpoints

@@ -46,6 +46,7 @@ from app.schemas.teacher import (
     UpdateProfileRequest,
     VerificationDocumentResponse,
 )
+from app.services.notifications import create_in_app_notifications, list_admin_user_ids
 from app.services.verification_documents import (
     build_document_access_url,
     derive_teacher_verification_status,
@@ -365,6 +366,17 @@ async def upload_document(
 
     from app.tasks.notifications import notify_admin_verification_submitted
     if has_uploaded_all_required_documents(profile.documents):
+        admin_user_ids = await list_admin_user_ids(db)
+        await create_in_app_notifications(
+            db,
+            user_ids=admin_user_ids,
+            notification_type="teacher_verification_submitted",
+            title="Teacher verification ready",
+            body=(
+                f"{profile.user.first_name} {profile.user.last_name} uploaded all required verification documents."
+            ),
+            metadata={"teacher_id": str(profile.id)},
+        )
         notify_admin_verification_submitted.apply_async(args=[str(profile.id)], countdown=5)
 
     return doc
