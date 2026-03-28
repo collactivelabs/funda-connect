@@ -113,6 +113,14 @@ class CancelBookingRequest(BaseModel):
     reason: str | None = None
 
 
+class RescheduleBookingRequest(BaseModel):
+    scheduled_at: datetime
+
+
+class RaiseDisputeRequest(BaseModel):
+    reason: str = Field(..., min_length=10, max_length=2000)
+
+
 class PayFastRedirectResponse(BaseModel):
     booking_id: UUID
     payment_url: str

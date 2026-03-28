@@ -1,5 +1,5 @@
 import axios, { type AxiosError } from "axios";
-import type { ApiError, AuthSession } from "@/types";
+import type { ApiError, AuthSession, ParentPaymentHistorySummary, ParentPaymentReceipt } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -92,13 +92,14 @@ export const apiClient = {
     getPublicAvailability: (id: string) => api.get(`/teachers/${id}/availability`),
     getBookableSlots: (
       id: string,
-      params: { durationMinutes: number; recurringWeeks?: number; days?: number }
+      params: { durationMinutes: number; recurringWeeks?: number; days?: number; ignoreBookingId?: string }
     ) =>
       api.get(`/teachers/${id}/bookable-slots`, {
         params: {
           duration_minutes: params.durationMinutes,
           recurring_weeks: params.recurringWeeks,
           days: params.days,
+          ignore_booking_id: params.ignoreBookingId,
         },
       }),
     listDocuments: () => api.get("/teachers/me/documents"),
@@ -111,6 +112,8 @@ export const apiClient = {
   },
   parents: {
     getLearners: () => api.get("/parents/me/learners"),
+    getPayments: () => api.get<ParentPaymentHistorySummary>("/parents/me/payments"),
+    getPaymentReceipt: (paymentId: string) => api.get<ParentPaymentReceipt>(`/parents/me/payments/${paymentId}/receipt`),
     createLearner: (body: unknown) => api.post("/parents/me/learners", body),
     updateLearner: (id: string, body: unknown) =>
       api.patch(`/parents/me/learners/${id}`, body),
@@ -122,6 +125,10 @@ export const apiClient = {
     get: (id: string) => api.get(`/bookings/${id}`),
     cancel: (id: string, body: unknown) =>
       api.post(`/bookings/${id}/cancel`, body),
+    reschedule: (id: string, body: { scheduled_at: string }) =>
+      api.post(`/bookings/${id}/reschedule`, body),
+    raiseDispute: (id: string, body: { reason: string }) =>
+      api.post(`/bookings/${id}/dispute`, body),
     complete: (id: string) => api.post(`/bookings/${id}/complete`),
     cancelSeries: (id: string, body: unknown) =>
       api.post(`/bookings/${id}/cancel-series`, body),
@@ -153,5 +160,13 @@ export const apiClient = {
       api.get("/admin/payouts", { params }),
     updatePayout: (id: string, body: { status: string; bank_reference?: string; notes?: string }) =>
       api.patch(`/admin/payouts/${id}`, body),
+    listRefunds: (params?: { refund_status?: string }) =>
+      api.get("/admin/refunds", { params }),
+    updateRefund: (id: string, body: { status: string; gateway_reference?: string; notes?: string }) =>
+      api.patch(`/admin/refunds/${id}`, body),
+    listDisputes: (params?: { dispute_status?: string }) =>
+      api.get("/admin/disputes", { params }),
+    resolveDispute: (id: string, body: { resolution: "completed" | "refunded"; notes?: string }) =>
+      api.patch(`/admin/disputes/${id}`, body),
   },
 };

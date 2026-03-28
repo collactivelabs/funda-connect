@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
 import { AddLearnerDialog } from "./add-learner-dialog";
+import { PaymentHistorySection } from "./payment-history-section";
 import { PaymentStatusBanner } from "./payment-status-banner";
 import { BookingList } from "@/components/shared/booking-list";
 import type { Learner } from "@/types";
@@ -93,6 +94,10 @@ export function ParentDashboard() {
           </div>
         )}
       </section>
+
+      <Separator />
+
+      <PaymentHistorySection />
 
       <Separator />
 

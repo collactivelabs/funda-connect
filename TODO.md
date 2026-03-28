@@ -38,16 +38,16 @@ This file tracks outstanding work identified by comparing the original technical
 
 ## 4. Payments, Payouts, And Reporting
 
-- [ ] Add payment history endpoint and UI.
-- [ ] Implement refund handling based on cancellation policy.
-- [ ] Add dispute/escrow workflow where needed.
-- [ ] Add invoice or receipt generation if still in scope.
-- [ ] Revisit recurring billing so it supports true subscription-style charging if required.
+- [x] Add payment history endpoint and UI.
+- [x] Implement refund handling based on cancellation policy.
+- [x] Add dispute/escrow workflow where needed.
+- [x] Add invoice or receipt generation if still in scope.
+- [ ] Decide whether recurring lessons should stay as the current prepaid-series model or move to true subscription-style charging.
 - [ ] Decide whether Ozow support is still planned; implement it or remove the remaining references.
 
 ## 5. Bookings, Learners, And Lesson Operations
 
-- [ ] Add rescheduling flow for bookings.
+- [x] Add rescheduling flow for bookings.
 - [ ] Add learner progress tracking.
 - [ ] Add learner report export.
 - [ ] Persist and surface richer lesson notes/topics/attendance if those remain part of the product scope.

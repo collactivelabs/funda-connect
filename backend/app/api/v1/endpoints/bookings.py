@@ -13,8 +13,16 @@ from app.core.deps import get_db, require_any_user, require_parent
 from app.core.redis import get_redis
 from app.models.booking import Booking
 from app.models.parent import Learner, ParentProfile
-from app.models.payment import Payment
+from app.models.payment import Dispute, Payment, Payout, Refund
 from app.models.teacher import TeacherProfile
+from app.services.prepaid_series import (
+    build_child_series_metadata,
+    build_root_series_metadata,
+    checkout_amount_cents,
+    recurring_weeks_from_metadata,
+    series_total_amount_cents,
+)
+from app.services.refunds import calculate_booking_cancellation_outcome
 from app.services.scheduling import (
     acquire_slot_hold,
     booking_lead_cutoff,
@@ -34,6 +42,8 @@ from app.schemas.booking import (
     CancelBookingRequest,
     CreateBookingRequest,
     PayFastRedirectResponse,
+    RaiseDisputeRequest,
+    RescheduleBookingRequest,
 )
 
 router = APIRouter()
@@ -118,8 +128,9 @@ def _payfast_signature(data: dict[str, str], passphrase: str | None = None) -> s
     return hashlib.md5(payload.encode()).hexdigest()  # noqa: S324
 
 
-def _payfast_form_data(booking: Booking, user_email: str) -> dict[str, str]:
-    amount = booking.amount_cents / 100
+def _payfast_form_data(booking: Booking, payment: Payment, user_email: str) -> dict[str, str]:
+    amount = checkout_amount_cents(payment.amount_cents, payment.gateway_metadata) / 100
+    recurring_weeks = recurring_weeks_from_metadata(payment.gateway_metadata)
     data = {
         "merchant_id": settings.PAYFAST_MERCHANT_ID or "10000100",
         "merchant_key": settings.PAYFAST_MERCHANT_KEY or "46f0cd694581a",
@@ -129,10 +140,95 @@ def _payfast_form_data(booking: Booking, user_email: str) -> dict[str, str]:
         "email_address": user_email,
         "m_payment_id": str(booking.id),
         "amount": f"{amount:.2f}",
-        "item_name": f"FundaConnect Lesson - Booking {str(booking.id)[:8]}",
+        "item_name": (
+            f"FundaConnect {recurring_weeks}-Lesson Series - Booking {str(booking.id)[:8]}"
+            if recurring_weeks > 1
+            else f"FundaConnect Lesson - Booking {str(booking.id)[:8]}"
+        ),
     }
     data["signature"] = _payfast_signature(data, settings.PAYFAST_PASSPHRASE)
     return data
+
+
+def _apply_confirmed_booking_cancellation(
+    booking: Booking,
+    *,
+    reason: str | None,
+    actor_role: str,
+    now_utc: datetime,
+    db: AsyncSession,
+) -> None:
+    if actor_role not in {"parent", "teacher"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only parents or teachers can cancel confirmed lessons",
+        )
+
+    payment = booking.payment
+    if payment is None or payment.status != "complete":
+        return
+
+    outcome = calculate_booking_cancellation_outcome(booking, actor_role, now_utc)
+    booking.teacher_payout_cents = outcome.teacher_payout_cents
+    booking.commission_cents = outcome.commission_cents
+
+    metadata = dict(payment.gateway_metadata or {})
+    metadata["cancellation"] = {
+        "policy_code": outcome.policy_code,
+        "refund_amount_cents": outcome.refund_amount_cents,
+        "teacher_payout_cents": outcome.teacher_payout_cents,
+        "commission_cents": outcome.commission_cents,
+        "cancelled_at": now_utc.isoformat(),
+        "cancelled_by_role": actor_role,
+    }
+    payment.gateway_metadata = metadata
+
+    if outcome.refund_amount_cents > 0:
+        refund = payment.refund
+        if refund is None:
+            refund = Refund(
+                payment_id=payment.id,
+                amount_cents=outcome.refund_amount_cents,
+                status="pending",
+                reason=reason,
+                requested_by_role=actor_role,
+                policy_code=outcome.policy_code,
+                notes="Process this refund manually in PayFast and then mark it refunded here.",
+            )
+            db.add(refund)
+        else:
+            refund.amount_cents = outcome.refund_amount_cents
+            refund.status = "pending"
+            refund.reason = reason
+            refund.requested_by_role = actor_role
+            refund.policy_code = outcome.policy_code
+            refund.notes = "Process this refund manually in PayFast and then mark it refunded here."
+
+    if outcome.teacher_payout_cents > 0 and payment.payout is None:
+        db.add(
+            Payout(
+                teacher_id=booking.teacher_id,
+                payment_id=payment.id,
+                amount_cents=outcome.teacher_payout_cents,
+                status="pending",
+                notes=f"Created from cancellation policy: {outcome.policy_code}",
+            )
+        )
+
+
+async def _refresh_booking_room(booking: Booking) -> None:
+    from app.services.video import create_room, delete_room
+
+    if booking.video_room_url:
+        room_name = booking.video_room_url.rstrip("/").split("/")[-1]
+        await delete_room(room_name)
+
+    room_url = await create_room(
+        booking_id=str(booking.id),
+        scheduled_at=booking.scheduled_at,
+        duration_minutes=booking.duration_minutes,
+    )
+    booking.video_room_url = room_url
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PayFastRedirectResponse)
@@ -269,12 +365,20 @@ async def create_booking(
         db.add(booking)
         await db.flush()
 
+        payment_metadata = None
+        if recurring_weeks > 1:
+            payment_metadata = build_root_series_metadata(booking.id, recurring_weeks)
+            payment_metadata["series_total_amount_cents"] = series_total_amount_cents(
+                amount_cents,
+                recurring_weeks,
+            )
+
         payment = Payment(
             booking_id=booking.id,
             gateway="payfast",
             amount_cents=amount_cents,
             status="pending",
-            gateway_metadata={"recurring_weeks": recurring_weeks} if recurring_weeks > 1 else None,
+            gateway_metadata=payment_metadata,
         )
         db.add(payment)
         await db.commit()
@@ -291,12 +395,12 @@ async def create_booking(
     )
 
     payment_url = _payfast_url(booking, payload["email"])
-    form_data = _payfast_form_data(booking, payload["email"])
+    form_data = _payfast_form_data(booking, payment, payload["email"])
     return PayFastRedirectResponse(
         booking_id=booking.id,
         payment_url=payment_url,
         form_data=form_data,
-        amount_cents=amount_cents,
+        amount_cents=checkout_amount_cents(payment.amount_cents, payment.gateway_metadata),
     )
 
 
@@ -351,6 +455,137 @@ async def get_booking(
     return booking
 
 
+@router.post("/{booking_id}/reschedule", response_model=BookingResponse)
+async def reschedule_booking(
+    booking_id: UUID,
+    body: RescheduleBookingRequest,
+    payload: dict = Depends(require_any_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a future confirmed booking to another valid slot for the same teacher."""
+    booking = await db.scalar(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(selectinload(Booking.payment))
+    )
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
+    await _assert_booking_access(booking, payload, db)
+
+    if payload.get("role") not in {"parent", "teacher"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only parents or teachers can reschedule lessons",
+        )
+
+    if booking.status != "confirmed":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Cannot reschedule a booking with status '{booking.status}'",
+        )
+
+    now_utc = datetime.now(UTC)
+    current_start = normalize_utc(booking.scheduled_at)
+    if now_utc >= current_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only future confirmed lessons can be rescheduled",
+        )
+
+    next_start = normalize_utc(body.scheduled_at)
+    if next_start == current_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Please choose a different time for this lesson",
+        )
+
+    if not is_slot_aligned(next_start):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Bookings must start on 30-minute boundaries",
+        )
+
+    if next_start < booking_lead_cutoff(now_utc):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Bookings must be made at least {settings.BOOKING_MIN_LEAD_MINUTES} minutes in advance",
+        )
+
+    teacher = await db.scalar(
+        select(TeacherProfile)
+        .where(TeacherProfile.id == booking.teacher_id)
+        .options(selectinload(TeacherProfile.availability_slots))
+    )
+    if not teacher:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
+
+    if not is_within_weekly_availability(
+        teacher.availability_slots,
+        next_start,
+        booking.duration_minutes,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Selected time falls outside the teacher's availability",
+        )
+
+    conflicts = await get_teacher_booking_conflicts(
+        db,
+        teacher.id,
+        range_start=next_start,
+        range_end=next_start,
+        now_utc=now_utc,
+    )
+    if slot_conflicts_with_bookings(
+        conflicts,
+        [next_start],
+        booking.duration_minutes,
+        now_utc,
+        ignore_booking_id=booking.id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That slot is no longer available. Please choose another time.",
+        )
+
+    redis = await get_redis()
+    hold_keys = await acquire_slot_hold(
+        redis,
+        teacher.id,
+        [next_start],
+        booking.duration_minutes,
+        booking_hold_expires_at(now_utc),
+    )
+    if hold_keys is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That slot is currently on hold. Please choose another time.",
+        )
+
+    try:
+        booking.scheduled_at = next_start
+        await _refresh_booking_room(booking)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await release_slot_hold(redis, hold_keys)
+        raise
+
+    await release_slot_hold(redis, hold_keys)
+    refreshed_booking = await db.scalar(
+        select(Booking)
+        .where(Booking.id == booking.id)
+        .options(
+            selectinload(Booking.learner),
+            selectinload(Booking.subject),
+        )
+    )
+    if refreshed_booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    return refreshed_booking
+
+
 @router.post("/{booking_id}/cancel", response_model=BookingResponse)
 async def cancel_booking(
     booking_id: UUID,
@@ -362,7 +597,10 @@ async def cancel_booking(
     booking = await db.scalar(
         select(Booking)
         .where(Booking.id == booking_id)
-        .options(selectinload(Booking.payment))
+        .options(
+            selectinload(Booking.payment).selectinload(Payment.payout),
+            selectinload(Booking.payment).selectinload(Payment.refund),
+        )
     )
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
@@ -377,17 +615,30 @@ async def cancel_booking(
 
     previous_status = booking.status
     room_url = booking.video_room_url
+    now_utc = datetime.now(UTC)
+    actor_role = payload.get("role", "")
+
     booking.status = "cancelled"
     booking.cancellation_reason = body.reason
+    booking.cancelled_at = now_utc
+    booking.cancelled_by_role = actor_role
     booking.video_room_url = None
     booking.hold_expires_at = None
 
     if previous_status == "pending_payment" and booking.payment:
         booking.payment.status = "cancelled"
+    elif previous_status == "confirmed":
+        _apply_confirmed_booking_cancellation(
+            booking,
+            reason=body.reason,
+            actor_role=actor_role,
+            now_utc=now_utc,
+            db=db,
+        )
 
     recurring_weeks = 1
-    if booking.payment and isinstance(booking.payment.gateway_metadata, dict):
-        recurring_weeks = int(booking.payment.gateway_metadata.get("recurring_weeks") or 1)
+    if booking.payment:
+        recurring_weeks = recurring_weeks_from_metadata(booking.payment.gateway_metadata)
 
     redis = await get_redis()
     await release_slot_hold(
@@ -446,6 +697,70 @@ async def complete_booking(
     return booking
 
 
+@router.post("/{booking_id}/dispute", response_model=BookingResponse)
+async def raise_booking_dispute(
+    booking_id: UUID,
+    body: RaiseDisputeRequest,
+    payload: dict = Depends(require_any_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Raise a dispute on a booking after the lesson has started and before payout is paid."""
+    booking = await db.scalar(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(
+            selectinload(Booking.payment).selectinload(Payment.payout),
+            selectinload(Booking.dispute),
+        )
+    )
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
+    await _assert_booking_access(booking, payload, db)
+
+    if booking.status in {"pending_payment", "cancelled", "expired", "disputed"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Cannot dispute a booking with status '{booking.status}'",
+        )
+    if booking.dispute:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A dispute has already been raised for this booking",
+        )
+
+    now_utc = datetime.now(UTC)
+    lesson_start = normalize_utc(booking.scheduled_at)
+    if now_utc < lesson_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A dispute can only be raised after the lesson has started",
+        )
+
+    payout = booking.payment.payout if booking.payment else None
+    if payout and payout.status == "paid":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This booking can no longer be disputed because the payout has already been processed",
+        )
+
+    if payout and payout.status in {"pending", "processing"}:
+        payout.status = "failed"
+        payout.notes = "Payout paused because the booking was marked as disputed."
+
+    db.add(
+        Dispute(
+            booking_id=booking.id,
+            raised_by_role=payload.get("role", "unknown"),
+            reason=body.reason.strip(),
+            status="open",
+            original_booking_status=booking.status,
+        )
+    )
+    booking.status = "disputed"
+    return booking
+
+
 @router.post("/{booking_id}/cancel-series", response_model=list[BookingResponse])
 async def cancel_booking_series(
     booking_id: UUID,
@@ -454,7 +769,14 @@ async def cancel_booking_series(
     db: AsyncSession = Depends(get_db),
 ):
     """Cancel all future confirmed bookings in a recurring series."""
-    booking = await db.get(Booking, booking_id)
+    booking = await db.scalar(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(
+            selectinload(Booking.payment).selectinload(Payment.payout),
+            selectinload(Booking.payment).selectinload(Payment.refund),
+        )
+    )
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
@@ -468,17 +790,19 @@ async def cancel_booking_series(
 
     await _assert_booking_access(booking, payload, db)
 
-    # Find all future confirmed bookings in this series
-    from datetime import datetime, timezone
-
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     siblings = (
         await db.scalars(
-            select(Booking).where(
+            select(Booking)
+            .where(
                 Booking.status == "confirmed",
                 Booking.scheduled_at > now,
                 (Booking.id == root_id)
                 | (Booking.recurring_booking_id == root_id),
+            )
+            .options(
+                selectinload(Booking.payment).selectinload(Payment.payout),
+                selectinload(Booking.payment).selectinload(Payment.refund),
             )
         )
     ).all()
@@ -487,8 +811,18 @@ async def cancel_booking_series(
     for sib in siblings:
         sib.status = "cancelled"
         sib.cancellation_reason = body.reason
+        sib.cancelled_at = now
+        sib.cancelled_by_role = payload.get("role", "")
+        sib.hold_expires_at = None
         if sib.video_room_url:
             sib.video_room_url = None
+        _apply_confirmed_booking_cancellation(
+            sib,
+            reason=body.reason,
+            actor_role=payload.get("role", ""),
+            now_utc=now,
+            db=db,
+        )
         cancelled.append(sib)
 
     return cancelled
@@ -555,7 +889,7 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
         **data,
     }
 
-    recurring_weeks = int((booking.payment.gateway_metadata or {}).get("recurring_weeks") or 1)
+    recurring_weeks = recurring_weeks_from_metadata(booking.payment.gateway_metadata)
     hold_keys = slot_lock_keys(
         booking.teacher_id,
         booking_occurrence_starts(booking.scheduled_at, recurring_weeks),
@@ -595,7 +929,9 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
         if room_url:
             booking.video_room_url = room_url
 
-        # Spawn recurring child bookings (pre-confirmed, no extra payment)
+        root_payment = booking.payment
+
+        # Spawn recurring child bookings and allocate the prepaid series amount per lesson.
         if booking.is_recurring and recurring_weeks > 1:
             from datetime import timedelta
 
@@ -618,6 +954,24 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
                     status="confirmed",
                 )
                 db.add(child)
+                await db.flush()
+
+                db.add(
+                    Payment(
+                        booking_id=child.id,
+                        gateway=root_payment.gateway,
+                        gateway_payment_id=pf_payment_id,
+                        amount_cents=booking.amount_cents,
+                        status="complete",
+                        paid_at=now_utc,
+                        gateway_metadata=build_child_series_metadata(
+                            root_booking_id=booking.id,
+                            root_payment_id=root_payment.id,
+                            recurring_weeks=recurring_weeks,
+                            occurrence_index=week + 1,
+                        ),
+                    )
+                )
 
         await db.commit()
         await release_slot_hold(redis, hold_keys)

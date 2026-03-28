@@ -203,7 +203,7 @@ export function ReviewTeacherDocumentsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto]">
         <DialogHeader>
           <DialogTitle>Review Verification Documents</DialogTitle>
           <DialogDescription>
@@ -214,143 +214,150 @@ export function ReviewTeacherDocumentsDialog({
         </DialogHeader>
 
         {loading ? (
-          <div className="py-8 text-sm text-muted-foreground">Loading verification details…</div>
+          <div className="flex min-h-0 items-center py-8 text-sm text-muted-foreground">
+            Loading verification details…
+          </div>
         ) : detail ? (
-          <div className="space-y-4">
-            {(message || error) && (
-              <Alert variant={error ? "destructive" : "default"}>
-                <AlertDescription>{error ?? message}</AlertDescription>
-              </Alert>
-            )}
+          <div className="min-h-0 overflow-hidden">
+            <ScrollArea className="h-full pr-3">
+              <div className="space-y-4 pr-1">
+                {(message || error) && (
+                  <Alert variant={error ? "destructive" : "default"}>
+                    <AlertDescription>{error ?? message}</AlertDescription>
+                  </Alert>
+                )}
 
-            <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-base font-medium">
-                      {detail.firstName} {detail.lastName}
-                    </span>
-                    <Badge variant={STATUS_VARIANT[detail.verificationStatus] ?? "outline"}>
-                      {detail.verificationStatus}
-                    </Badge>
-                    {detail.isPremium && <Badge variant="outline">Premium</Badge>}
+                <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                    <div className="space-y-2 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-base font-medium">
+                          {detail.firstName} {detail.lastName}
+                        </span>
+                        <Badge variant={STATUS_VARIANT[detail.verificationStatus] ?? "outline"}>
+                          {detail.verificationStatus}
+                        </Badge>
+                        {detail.isPremium && <Badge variant="outline">Premium</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground break-words">
+                        Subjects: {detail.subjects.length ? detail.subjects.join(", ") : "None yet"}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {summaryBadges.map((badge) => (
+                          <Badge key={badge.label} variant={badge.variant}>
+                            {badge.label}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="text-sm text-muted-foreground sm:text-right">
+                      <p>Required docs uploaded: {detail.allRequiredDocumentsUploaded ? "Yes" : "No"}</p>
+                      <p>Required docs approved: {detail.allRequiredDocumentsApproved ? "Yes" : "No"}</p>
+                    </div>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Subjects: {detail.subjects.length ? detail.subjects.join(", ") : "None yet"}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {summaryBadges.map((badge) => (
-                      <Badge key={badge.label} variant={badge.variant}>
-                        {badge.label}
-                      </Badge>
+
+                  {(detail.missingRequiredDocumentTypes.length > 0 || detail.rejectedRequiredDocumentTypes.length > 0) && (
+                    <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+                      {detail.missingRequiredDocumentTypes.length > 0 && (
+                        <p>
+                          Missing required types:{" "}
+                          {detail.missingRequiredDocumentTypes.map(getVerificationDocumentLabel).join(", ")}
+                        </p>
+                      )}
+                      {detail.rejectedRequiredDocumentTypes.length > 0 && (
+                        <p>
+                          Rejected and still awaiting replacement:{" "}
+                          {detail.rejectedRequiredDocumentTypes.map(getVerificationDocumentLabel).join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-4 space-y-2">
+                    <label className="text-sm font-medium">Overall decision notes</label>
+                    <Textarea
+                      value={decisionNotes}
+                      onChange={(event) => setDecisionNotes(event.target.value)}
+                      placeholder="Optional note sent when rejecting or suspending the teacher..."
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border/70">
+                  <div className="space-y-3 p-4">
+                    {detail.documents.map((document) => (
+                      <div key={document.id} className="overflow-hidden rounded-lg border border-border/70 bg-background p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium">
+                                {getVerificationDocumentLabel(document.documentType)}
+                              </span>
+                              <Badge variant={STATUS_VARIANT[document.status] ?? "outline"}>
+                                {document.status}
+                              </Badge>
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              <p className="break-all">{document.fileName}</p>
+                              <p>Uploaded: {formatTimestamp(document.createdAt)}</p>
+                              <p>Reviewed: {formatTimestamp(document.reviewedAt)}</p>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="sm:self-start"
+                            disabled={busyKey === `view-${document.id}`}
+                            onClick={() => handleOpenDocument(document.id)}
+                          >
+                            {busyKey === `view-${document.id}` ? "Opening…" : "View document"}
+                          </Button>
+                        </div>
+
+                        <div className="mt-4 space-y-2">
+                          <label className="text-sm font-medium">Reviewer notes</label>
+                          <Textarea
+                            value={noteDrafts[document.id] ?? ""}
+                            onChange={(event) =>
+                              setNoteDrafts((current) => ({
+                                ...current,
+                                [document.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Explain what was checked or what needs to be fixed..."
+                          />
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="default"
+                            disabled={busyKey === `approved-${document.id}`}
+                            onClick={() => handleReviewDocument(document.id, "approved")}
+                          >
+                            {busyKey === `approved-${document.id}` ? "Approving…" : "Approve"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            disabled={busyKey === `rejected-${document.id}`}
+                            onClick={() => handleReviewDocument(document.id, "rejected")}
+                          >
+                            {busyKey === `rejected-${document.id}` ? "Rejecting…" : "Reject"}
+                          </Button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  <p>Required docs uploaded: {detail.allRequiredDocumentsUploaded ? "Yes" : "No"}</p>
-                  <p>Required docs approved: {detail.allRequiredDocumentsApproved ? "Yes" : "No"}</p>
-                </div>
-              </div>
-
-              {(detail.missingRequiredDocumentTypes.length > 0 || detail.rejectedRequiredDocumentTypes.length > 0) && (
-                <div className="mt-4 space-y-2 text-sm text-muted-foreground">
-                  {detail.missingRequiredDocumentTypes.length > 0 && (
-                    <p>
-                      Missing required types:{" "}
-                      {detail.missingRequiredDocumentTypes.map(getVerificationDocumentLabel).join(", ")}
-                    </p>
-                  )}
-                  {detail.rejectedRequiredDocumentTypes.length > 0 && (
-                    <p>
-                      Rejected and still awaiting replacement:{" "}
-                      {detail.rejectedRequiredDocumentTypes.map(getVerificationDocumentLabel).join(", ")}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-4 space-y-2">
-                <label className="text-sm font-medium">Overall decision notes</label>
-                <Textarea
-                  value={decisionNotes}
-                  onChange={(event) => setDecisionNotes(event.target.value)}
-                  placeholder="Optional note sent when rejecting or suspending the teacher..."
-                />
-              </div>
-            </div>
-
-            <ScrollArea className="max-h-[50vh] rounded-lg border border-border/70">
-              <div className="space-y-3 p-4">
-                {detail.documents.map((document) => (
-                  <div key={document.id} className="rounded-lg border border-border/70 bg-background p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium">
-                            {getVerificationDocumentLabel(document.documentType)}
-                          </span>
-                          <Badge variant={STATUS_VARIANT[document.status] ?? "outline"}>
-                            {document.status}
-                          </Badge>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          <p>{document.fileName}</p>
-                          <p>Uploaded: {formatTimestamp(document.createdAt)}</p>
-                          <p>Reviewed: {formatTimestamp(document.reviewedAt)}</p>
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={busyKey === `view-${document.id}`}
-                        onClick={() => handleOpenDocument(document.id)}
-                      >
-                        {busyKey === `view-${document.id}` ? "Opening…" : "View document"}
-                      </Button>
-                    </div>
-
-                    <div className="mt-4 space-y-2">
-                      <label className="text-sm font-medium">Reviewer notes</label>
-                      <Textarea
-                        value={noteDrafts[document.id] ?? ""}
-                        onChange={(event) =>
-                          setNoteDrafts((current) => ({
-                            ...current,
-                            [document.id]: event.target.value,
-                          }))
-                        }
-                        placeholder="Explain what was checked or what needs to be fixed..."
-                      />
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="default"
-                        disabled={busyKey === `approved-${document.id}`}
-                        onClick={() => handleReviewDocument(document.id, "approved")}
-                      >
-                        {busyKey === `approved-${document.id}` ? "Approving…" : "Approve"}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={busyKey === `rejected-${document.id}`}
-                        onClick={() => handleReviewDocument(document.id, "rejected")}
-                      >
-                        {busyKey === `rejected-${document.id}` ? "Rejecting…" : "Reject"}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
               </div>
             </ScrollArea>
           </div>
         ) : (
-          <div className="py-8 text-sm text-muted-foreground">
+          <div className="flex min-h-0 items-center py-8 text-sm text-muted-foreground">
             No verification details loaded.
           </div>
         )}

@@ -19,12 +19,13 @@ class Payment(UUIDMixin, TimestampMixin, Base):
     gateway_payment_id: Mapped[str | None] = mapped_column(String(100), index=True)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
-    # pending | complete | failed | refunded | cancelled
+    # pending | complete | failed | refunded | partially_refunded | cancelled
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     gateway_metadata: Mapped[dict | None] = mapped_column(JSONB)  # raw ITN payload
 
     booking: Mapped["Booking"] = relationship("Booking", back_populates="payment")  # noqa: F821
     payout: Mapped["Payout | None"] = relationship("Payout", back_populates="payment", uselist=False)
+    refund: Mapped["Refund | None"] = relationship("Refund", back_populates="payment", uselist=False)
 
 
 class Payout(UUIDMixin, TimestampMixin, Base):
@@ -44,6 +45,43 @@ class Payout(UUIDMixin, TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     payment: Mapped["Payment"] = relationship("Payment", back_populates="payout")
+
+
+class Refund(UUIDMixin, TimestampMixin, Base):
+    __tablename__ = "refunds"
+
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    # pending | processing | refunded | failed | cancelled
+    reason: Mapped[str | None] = mapped_column(Text)
+    requested_by_role: Mapped[str | None] = mapped_column(String(20))
+    policy_code: Mapped[str | None] = mapped_column(String(50))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    gateway_reference: Mapped[str | None] = mapped_column(String(100))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    payment: Mapped["Payment"] = relationship("Payment", back_populates="refund")
+
+
+class Dispute(UUIDMixin, TimestampMixin, Base):
+    __tablename__ = "disputes"
+
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    raised_by_role: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    # open | resolved
+    resolution: Mapped[str | None] = mapped_column(String(20))
+    original_booking_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    admin_notes: Mapped[str | None] = mapped_column(Text)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    booking: Mapped["Booking"] = relationship("Booking", back_populates="dispute")  # noqa: F821
 
 
 class VerificationDocument(UUIDMixin, TimestampMixin, Base):

@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 from app.core.config import settings
 from app.core.deps import get_db, require_teacher
 from app.core.redis import get_redis
-from app.models.booking import AvailabilitySlot
+from app.models.booking import AvailabilitySlot, Booking
 from app.models.curriculum import Subject
 from app.models.payment import Payout, VerificationDocument
 from app.models.teacher import TeacherProfile, TeacherSubject
@@ -451,6 +451,7 @@ async def get_teacher_bookable_slots(
     duration_minutes: int = Query(60, ge=30, le=180),
     days: int = Query(settings.BOOKABLE_SLOT_DAYS, ge=1, le=42),
     recurring_weeks: int = Query(1, ge=1, le=12),
+    ignore_booking_id: UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Return concrete upcoming bookable slots for a teacher."""
@@ -473,6 +474,12 @@ async def get_teacher_bookable_slots(
     availability_slots = [slot for slot in teacher.availability_slots if slot.is_active]
     if not availability_slots:
         return []
+
+    ignored_booking_start: datetime | None = None
+    if ignore_booking_id is not None:
+        ignored_booking = await db.get(Booking, ignore_booking_id)
+        if ignored_booking and ignored_booking.teacher_id == teacher_id:
+            ignored_booking_start = normalize_utc(ignored_booking.scheduled_at)
 
     now_utc = datetime.now(UTC)
     lead_cutoff_local = booking_lead_cutoff(now_utc).astimezone(SAST)
@@ -518,13 +525,22 @@ async def get_teacher_bookable_slots(
                     continue
 
                 candidate_start_utc = normalize_utc(candidate_start_local.astimezone(UTC))
+                if ignored_booking_start is not None and candidate_start_utc == ignored_booking_start:
+                    candidate_start_local += step
+                    continue
                 if candidate_start_utc in seen_start_times:
                     candidate_start_local += step
                     continue
 
                 occurrence_starts = booking_occurrence_starts(candidate_start_utc, recurring_weeks)
 
-                if slot_conflicts_with_bookings(conflicts, occurrence_starts, duration_minutes, now_utc):
+                if slot_conflicts_with_bookings(
+                    conflicts,
+                    occurrence_starts,
+                    duration_minutes,
+                    now_utc,
+                    ignore_booking_id=ignore_booking_id,
+                ):
                     candidate_start_local += step
                     continue
 

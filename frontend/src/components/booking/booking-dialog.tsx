@@ -110,6 +110,9 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
   const amountCents = teacher.hourlyRateCents
     ? Math.floor(teacher.hourlyRateCents * durationMinutes / 60)
     : null;
+  const totalChargeCents = amountCents !== null
+    ? amountCents * (isRecurring ? recurringWeeks : 1)
+    : null;
 
   useEffect(() => {
     if (!open) return;
@@ -493,6 +496,12 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
                     <span className="text-muted-foreground">Weekly series</span>
                     <span className="font-semibold">{recurringWeeks} lessons</span>
                   </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Due today</span>
+                    <span className="text-base font-semibold">
+                      R{((totalChargeCents ?? 0) / 100).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-between text-sm">
@@ -503,7 +512,9 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
                 </div>
               )}
               <p className="text-xs text-muted-foreground -mt-2">
-                You&apos;ll be redirected to PayFast to complete payment. Your slot will be held for 15 minutes while payment is pending.
+                {isRecurring
+                  ? "You'll be redirected to PayFast to pay for the full weekly series upfront. Your slot will be held for 15 minutes while payment is pending."
+                  : "You'll be redirected to PayFast to complete payment. Your slot will be held for 15 minutes while payment is pending."}
               </p>
             </>
           )}

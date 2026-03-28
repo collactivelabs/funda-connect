@@ -36,6 +36,8 @@ interface Stats {
   confirmedBookings: number;
   totalRevenueCents: number;
   pendingPayoutsCents: number;
+  pendingRefundsCents: number;
+  openDisputes: number;
 }
 
 interface AdminTeacher {
@@ -68,6 +70,33 @@ interface AdminPayout {
   createdAt: string;
 }
 
+interface AdminRefund {
+  id: string;
+  paymentId: string;
+  bookingId: string;
+  parentName: string;
+  teacherName: string;
+  amountCents: number;
+  status: string;
+  policyCode?: string | null;
+  requestedByRole?: string | null;
+  createdAt: string;
+}
+
+interface AdminDispute {
+  id: string;
+  bookingId: string;
+  parentName: string;
+  teacherName: string;
+  subjectName: string;
+  scheduledAt: string;
+  raisedByRole: string;
+  reason: string;
+  status: string;
+  resolution?: string | null;
+  createdAt: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────
 
 function formatRand(cents: number | null | undefined) {
@@ -88,6 +117,18 @@ const PAYOUT_BADGE: Record<string, "default" | "secondary" | "outline" | "destru
   processing: "secondary",
   paid: "default",
   failed: "destructive",
+};
+
+const REFUND_BADGE: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
+  pending: "secondary",
+  processing: "outline",
+  refunded: "default",
+  failed: "destructive",
+};
+
+const DISPUTE_BADGE: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
+  open: "destructive",
+  resolved: "default",
 };
 
 // ── Stats Cards ───────────────────────────────────────────────
@@ -112,8 +153,12 @@ export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [teachers, setTeachers] = useState<AdminTeacher[]>([]);
   const [payouts, setPayouts] = useState<AdminPayout[]>([]);
+  const [refunds, setRefunds] = useState<AdminRefund[]>([]);
+  const [disputes, setDisputes] = useState<AdminDispute[]>([]);
   const [teacherFilter, setTeacherFilter] = useState("under_review");
   const [payoutFilter, setPayoutFilter] = useState("pending");
+  const [refundFilter, setRefundFilter] = useState("pending");
+  const [disputeFilter, setDisputeFilter] = useState("open");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [reviewTeacherId, setReviewTeacherId] = useState<string | null>(null);
@@ -153,6 +198,20 @@ export default function AdminPage() {
       .catch(() => null);
   }, [payoutFilter]);
 
+  useEffect(() => {
+    apiClient.admin
+      .listRefunds(refundFilter ? { refund_status: refundFilter } : undefined)
+      .then(({ data }) => setRefunds(data as AdminRefund[]))
+      .catch(() => null);
+  }, [refundFilter]);
+
+  useEffect(() => {
+    apiClient.admin
+      .listDisputes(disputeFilter ? { dispute_status: disputeFilter } : undefined)
+      .then(({ data }) => setDisputes(data as AdminDispute[]))
+      .catch(() => null);
+  }, [disputeFilter]);
+
   async function handleVerify(teacherId: string, action: "verify" | "reject" | "suspend") {
     setActionLoading(`verify-${teacherId}-${action}`);
     try {
@@ -189,6 +248,34 @@ export default function AdminPage() {
     }
   }
 
+  async function handleRefundStatus(refundId: string, newStatus: string) {
+    setActionLoading(`refund-${refundId}`);
+    try {
+      await apiClient.admin.updateRefund(refundId, { status: newStatus });
+      setRefunds((prev) =>
+        prev.map((refund) => (refund.id === refundId ? { ...refund, status: newStatus } : refund))
+      );
+      loadStats();
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleDisputeResolution(disputeId: string, resolution: "completed" | "refunded") {
+    setActionLoading(`dispute-${disputeId}`);
+    try {
+      await apiClient.admin.resolveDispute(disputeId, { resolution });
+      setDisputes((prev) =>
+        prev.map((dispute) =>
+          dispute.id === disputeId ? { ...dispute, status: "resolved", resolution } : dispute
+        )
+      );
+      loadStats();
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   if (user && user.role !== "admin") return null;
 
   return (
@@ -209,10 +296,12 @@ export default function AdminPage() {
           <StatCard label="Confirmed Bookings" value={stats.confirmedBookings} />
           <StatCard label="Total Revenue" value={formatRand(stats.totalRevenueCents)} />
           <StatCard label="Pending Payouts" value={formatRand(stats.pendingPayoutsCents)} />
+          <StatCard label="Pending Refunds" value={formatRand(stats.pendingRefundsCents)} />
+          <StatCard label="Open Disputes" value={stats.openDisputes} />
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: 10 }).map((_, i) => (
             <Skeleton key={i} className="h-24 w-full" />
           ))}
         </div>
@@ -409,6 +498,180 @@ export default function AdminPage() {
                               onClick={() => handlePayoutStatus(p.id, "failed")}
                             >
                               Mark Failed
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base font-semibold">Refunds</CardTitle>
+          <Select value={refundFilter} onValueChange={(value) => setRefundFilter(value ?? "")}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="processing">Processing</SelectItem>
+              <SelectItem value="refunded">Refunded</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardHeader>
+        <CardContent className="p-0">
+          {refunds.length === 0 ? (
+            <p className="text-sm text-muted-foreground p-6">No refunds found.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Parent</TableHead>
+                  <TableHead>Teacher</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Policy</TableHead>
+                  <TableHead>Requested</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {refunds.map((refund) => (
+                  <TableRow key={refund.id}>
+                    <TableCell className="font-medium">{refund.parentName}</TableCell>
+                    <TableCell>{refund.teacherName}</TableCell>
+                    <TableCell className="text-right">{formatRand(refund.amountCents)}</TableCell>
+                    <TableCell>
+                      <Badge variant={REFUND_BADGE[refund.status] ?? "outline"}>{refund.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {refund.policyCode ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {new Date(refund.createdAt).toLocaleDateString("en-ZA")}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1 justify-end">
+                        {refund.status === "pending" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={actionLoading === `refund-${refund.id}`}
+                            onClick={() => handleRefundStatus(refund.id, "processing")}
+                          >
+                            Mark Processing
+                          </Button>
+                        )}
+                        {refund.status === "processing" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              disabled={actionLoading === `refund-${refund.id}`}
+                              onClick={() => handleRefundStatus(refund.id, "refunded")}
+                            >
+                              Mark Refunded
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={actionLoading === `refund-${refund.id}`}
+                              onClick={() => handleRefundStatus(refund.id, "failed")}
+                            >
+                              Mark Failed
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base font-semibold">Disputes</CardTitle>
+          <Select value={disputeFilter} onValueChange={(value) => setDisputeFilter(value ?? "")}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="resolved">Resolved</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardHeader>
+        <CardContent className="p-0">
+          {disputes.length === 0 ? (
+            <p className="text-sm text-muted-foreground p-6">No disputes found.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Parent</TableHead>
+                  <TableHead>Teacher</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Raised</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {disputes.map((dispute) => (
+                  <TableRow key={dispute.id}>
+                    <TableCell className="font-medium">
+                      <div>{dispute.subjectName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(dispute.scheduledAt).toLocaleString("en-ZA")}
+                      </div>
+                    </TableCell>
+                    <TableCell>{dispute.parentName}</TableCell>
+                    <TableCell>{dispute.teacherName}</TableCell>
+                    <TableCell>
+                      <Badge variant={DISPUTE_BADGE[dispute.status] ?? "outline"}>
+                        {dispute.status}
+                      </Badge>
+                      {dispute.resolution && (
+                        <span className="ml-2 text-xs text-muted-foreground">{dispute.resolution}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {dispute.raisedByRole} · {new Date(dispute.createdAt).toLocaleDateString("en-ZA")}
+                    </TableCell>
+                    <TableCell className="max-w-sm text-sm text-muted-foreground">
+                      <span className="line-clamp-3">{dispute.reason}</span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1 justify-end">
+                        {dispute.status === "open" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={actionLoading === `dispute-${dispute.id}`}
+                              onClick={() => handleDisputeResolution(dispute.id, "completed")}
+                            >
+                              Resolve completed
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={actionLoading === `dispute-${dispute.id}`}
+                              onClick={() => handleDisputeResolution(dispute.id, "refunded")}
+                            >
+                              Resolve refund
                             </Button>
                           </>
                         )}

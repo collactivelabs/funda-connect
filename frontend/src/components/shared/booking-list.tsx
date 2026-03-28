@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LeaveReviewDialog } from "@/components/parent/leave-review-dialog";
+import { RaiseDisputeDialog } from "@/components/shared/raise-dispute-dialog";
+import { RescheduleBookingDialog } from "@/components/shared/reschedule-booking-dialog";
 import { apiClient } from "@/lib/api";
 import type { Booking, BookingStatus } from "@/types";
 
@@ -14,6 +16,7 @@ const STATUS_CONFIG: Record<BookingStatus, { label: string; variant: "default" |
   confirmed: { label: "Confirmed", variant: "default" },
   in_progress: { label: "In progress", variant: "default" },
   completed: { label: "Completed", variant: "outline" },
+  disputed: { label: "Disputed", variant: "destructive" },
   cancelled: { label: "Cancelled", variant: "destructive" },
   expired: { label: "Payment expired", variant: "destructive" },
   reviewed: { label: "Reviewed", variant: "outline" },
@@ -76,6 +79,10 @@ export function BookingList({ role }: Props) {
     );
   }
 
+  function markDisputed(bookingId: string) {
+    updateBooking(bookingId, { status: "disputed" });
+  }
+
   function cancelSeries(cancelledIds: string[]) {
     setBookings((prev) =>
       prev.map((b) =>
@@ -115,7 +122,7 @@ export function BookingList({ role }: Props) {
           <h3 className="text-sm font-medium text-muted-foreground mb-3">Upcoming</h3>
           <div className="space-y-2">
             {upcoming.map((b) => (
-              <BookingRow key={b.id} booking={b} role={role} now={now} onReviewed={markReviewed} onUpdated={updateBooking} onSeriesCancelled={cancelSeries} />
+              <BookingRow key={b.id} booking={b} role={role} now={now} onReviewed={markReviewed} onDisputed={markDisputed} onUpdated={updateBooking} onSeriesCancelled={cancelSeries} />
             ))}
           </div>
         </div>
@@ -125,7 +132,7 @@ export function BookingList({ role }: Props) {
           <h3 className="text-sm font-medium text-muted-foreground mb-3">Past</h3>
           <div className="space-y-2">
             {past.slice(0, 5).map((b) => (
-              <BookingRow key={b.id} booking={b} role={role} now={now} onReviewed={markReviewed} onUpdated={updateBooking} onSeriesCancelled={cancelSeries} />
+              <BookingRow key={b.id} booking={b} role={role} now={now} onReviewed={markReviewed} onDisputed={markDisputed} onUpdated={updateBooking} onSeriesCancelled={cancelSeries} />
             ))}
           </div>
         </div>
@@ -139,6 +146,7 @@ function BookingRow({
   role,
   now,
   onReviewed,
+  onDisputed,
   onUpdated,
   onSeriesCancelled,
 }: {
@@ -146,6 +154,7 @@ function BookingRow({
   role?: "parent" | "teacher";
   now: Date;
   onReviewed: (id: string) => void;
+  onDisputed: (id: string) => void;
   onUpdated: (id: string, patch: Partial<Booking>) => void;
   onSeriesCancelled: (ids: string[]) => void;
 }) {
@@ -163,6 +172,14 @@ function BookingRow({
   const canJoin = booking.videoRoomUrl && joinWindowOpen && booking.status === "confirmed";
   const canMarkComplete = role === "teacher" && booking.status === "confirmed" && now >= lessonStart;
   const canReview = role === "parent" && booking.status === "completed";
+  const canReschedule =
+    (role === "parent" || role === "teacher") &&
+    booking.status === "confirmed" &&
+    now < lessonStart;
+  const canRaiseDispute =
+    (role === "parent" || role === "teacher") &&
+    now >= lessonStart &&
+    ["confirmed", "in_progress", "completed", "reviewed"].includes(booking.status);
   // A child booking has a recurringBookingId pointing to its root
   const isChildRecurring = booking.isRecurring && !!booking.recurringBookingId;
 
@@ -207,6 +224,18 @@ function BookingRow({
             <LeaveReviewDialog
               bookingId={booking.id}
               onReviewed={() => onReviewed(booking.id)}
+            />
+          )}
+          {canReschedule && (
+            <RescheduleBookingDialog
+              booking={booking}
+              onRescheduled={(patch) => onUpdated(booking.id, patch)}
+            />
+          )}
+          {canRaiseDispute && (
+            <RaiseDisputeDialog
+              booking={booking}
+              onRaised={onDisputed}
             />
           )}
           {canMarkComplete && (

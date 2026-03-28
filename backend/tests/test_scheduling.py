@@ -114,3 +114,17 @@ def test_slot_conflicts_with_bookings_ignores_expired_pending_holds():
 
     assert not slot_conflicts_with_bookings([expired_pending], [occurrence_start], 60, now_utc=now)
     assert slot_conflicts_with_bookings([confirmed], [occurrence_start], 60, now_utc=now)
+
+
+def test_slot_conflicts_with_bookings_can_ignore_the_booking_being_rescheduled():
+    occurrence_start = datetime(2026, 3, 30, 7, 0, tzinfo=UTC)
+    booking_id = uuid4()
+    confirmed = SimpleNamespace(
+        id=booking_id,
+        status="confirmed",
+        hold_expires_at=None,
+        scheduled_at=occurrence_start,
+        duration_minutes=60,
+    )
+
+    assert slot_conflicts_with_bookings([confirmed], [occurrence_start], 60, ignore_booking_id=booking_id) is False

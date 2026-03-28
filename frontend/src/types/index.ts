@@ -98,6 +98,67 @@ export interface Learner {
   age?: number;
 }
 
+export type PaymentStatus =
+  | "pending"
+  | "complete"
+  | "failed"
+  | "refunded"
+  | "partially_refunded"
+  | "cancelled";
+
+export interface ParentPaymentHistoryItem {
+  id: string;
+  bookingId: string;
+  gateway: string;
+  gatewayPaymentId?: string | null;
+  amountCents: number;
+  status: PaymentStatus;
+  paidAt?: string | null;
+  createdAt: string;
+  bookingStatus: BookingStatus;
+  scheduledAt: string;
+  teacherName: string;
+  learnerName: string;
+  subjectName: string;
+  refundAmountCents: number;
+  refundStatus?: "pending" | "processing" | "refunded" | "failed" | "cancelled" | null;
+  refundRequestedAt?: string | null;
+  refundProcessedAt?: string | null;
+  isSeries: boolean;
+  seriesLessons: number;
+}
+
+export interface ParentPaymentHistorySummary {
+  completedPaymentsCents: number;
+  pendingPaymentsCents: number;
+  refundedPaymentsCents: number;
+  refundPendingCents: number;
+  payments: ParentPaymentHistoryItem[];
+}
+
+export interface ParentPaymentReceipt {
+  paymentId: string;
+  bookingId: string;
+  receiptReference: string;
+  issuedAt: string;
+  paymentStatus: PaymentStatus;
+  paymentGateway: string;
+  paymentGatewayReference?: string | null;
+  amountCents: number;
+  refundAmountCents: number;
+  netPaidCents: number;
+  parentName: string;
+  parentEmail: string;
+  teacherName: string;
+  learnerName: string;
+  subjectName: string;
+  scheduledAt: string;
+  durationMinutes: number;
+  isTrial: boolean;
+  isSeries: boolean;
+  seriesLessons: number;
+}
+
 // ── Subjects ──────────────────────────────────────────────────
 export interface Subject {
   id: string;
@@ -113,6 +174,7 @@ export type BookingStatus =
   | "confirmed"
   | "in_progress"
   | "completed"
+  | "disputed"
   | "cancelled"
   | "expired"
   | "reviewed";

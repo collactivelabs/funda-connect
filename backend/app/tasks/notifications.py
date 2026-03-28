@@ -243,3 +243,50 @@ def send_payout_notification(self, payout_id: str) -> None:
     except Exception as exc:
         logger.error("send_payout_notification.error", payout_id=payout_id, error=str(exc))
         raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def send_refund_notification(self, refund_id: str) -> None:
+    """Notify parent when a refund has been marked as processed."""
+    async def _run():
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+        from sqlalchemy.orm import selectinload
+
+        from app.core.config import settings
+        from app.models.parent import ParentProfile
+        from app.models.payment import Payment, Refund
+        from app.models.user import User
+        from app.services.email import refund_processed
+
+        engine = create_async_engine(settings.DATABASE_URL, echo=False)
+        try:
+            async with AsyncSession(engine) as db:
+                refund = await db.scalar(
+                    select(Refund)
+                    .where(Refund.id == refund_id)
+                    .options(selectinload(Refund.payment).selectinload(Payment.booking))
+                )
+                if not refund:
+                    return
+                parent = await db.get(ParentProfile, refund.payment.booking.parent_id)
+                if not parent:
+                    return
+                user = await db.get(User, parent.user_id)
+                if not user:
+                    return
+                refund_processed(
+                    to=user.email,
+                    parent_name=user.first_name,
+                    amount_cents=refund.amount_cents,
+                    lesson_reference=str(refund.payment.booking.id)[:8].upper(),
+                )
+        finally:
+            await engine.dispose()
+
+    try:
+        asyncio.run(_run())
+        logger.info("send_refund_notification.done", refund_id=refund_id)
+    except Exception as exc:
+        logger.error("send_refund_notification.error", refund_id=refund_id, error=str(exc))
+        raise self.retry(exc=exc)

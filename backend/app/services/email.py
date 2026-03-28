@@ -182,6 +182,21 @@ def payout_processed(to: str, teacher_name: str, amount_cents: int, bank_referen
     _send(to, f"FundaConnect payout of {amount} processed", _base(content))
 
 
+def refund_processed(to: str, parent_name: str, amount_cents: int, lesson_reference: str) -> None:
+    amount = f"R{amount_cents / 100:.2f}"
+    content = f"""
+<h2>Refund processed</h2>
+<p>Hi {parent_name}, your refund has now been processed.</p>
+<div class="box">
+  <p><strong>Refund amount:</strong> {amount}</p>
+  <p><strong>Booking reference:</strong> {lesson_reference}</p>
+</div>
+<p>Please allow a short time for the refund to reflect on your side, depending on your bank.</p>
+<a class="btn" href="https://fundaconnect.co.za/parent">View my payments</a>
+"""
+    _send(to, f"Your FundaConnect refund of {amount} has been processed", _base(content))
+
+
 def email_verification_link(to: str, first_name: str, verify_url: str) -> None:
     content = f"""
 <h2>Verify your email</h2>

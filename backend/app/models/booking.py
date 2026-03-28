@@ -66,6 +66,8 @@ class Booking(UUIDMixin, TimestampMixin, Base):
     # Notes
     parent_notes: Mapped[str | None] = mapped_column(Text)
     cancellation_reason: Mapped[str | None] = mapped_column(Text)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_by_role: Mapped[str | None] = mapped_column(String(20))
 
     # Relationships
     parent: Mapped["ParentProfile"] = relationship("ParentProfile", back_populates="bookings")  # noqa: F821
@@ -74,6 +76,9 @@ class Booking(UUIDMixin, TimestampMixin, Base):
     subject: Mapped["Subject"] = relationship("Subject")  # noqa: F821
     payment: Mapped["Payment | None"] = relationship(  # noqa: F821
         "Payment", back_populates="booking", uselist=False
+    )
+    dispute: Mapped["Dispute | None"] = relationship(  # noqa: F821
+        "Dispute", back_populates="booking", uselist=False
     )
     review: Mapped["Review | None"] = relationship(  # noqa: F821
         "Review", back_populates="booking", uselist=False

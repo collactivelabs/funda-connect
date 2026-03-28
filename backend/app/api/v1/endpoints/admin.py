@@ -10,9 +10,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_db, require_admin
 from app.models.booking import Booking
-from app.models.payment import Payout, VerificationDocument
+from app.models.parent import ParentProfile
+from app.models.payment import Dispute, Payment, Payout, Refund, VerificationDocument
 from app.models.teacher import TeacherProfile, TeacherSubject
 from app.schemas.teacher import DocumentAccessResponse, VerificationDocumentResponse
+from app.services.refunds import payment_status_after_refund
 from app.services.verification_documents import (
     build_document_access_url,
     derive_teacher_verification_status,
@@ -119,6 +121,50 @@ class StatsResponse(BaseModel):
     confirmed_bookings: int
     total_revenue_cents: int
     pending_payouts_cents: int
+    pending_refunds_cents: int
+    open_disputes: int
+
+
+class RefundListItem(BaseModel):
+    id: UUID
+    payment_id: UUID
+    booking_id: UUID
+    parent_name: str
+    teacher_name: str
+    amount_cents: int
+    status: str
+    policy_code: str | None = None
+    requested_by_role: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UpdateRefundRequest(BaseModel):
+    status: str  # processing | refunded | failed
+    gateway_reference: str | None = None
+    notes: str | None = None
+
+
+class DisputeListItem(BaseModel):
+    id: UUID
+    booking_id: UUID
+    parent_name: str
+    teacher_name: str
+    subject_name: str
+    scheduled_at: datetime
+    raised_by_role: str
+    reason: str
+    status: str
+    resolution: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ResolveDisputeRequest(BaseModel):
+    resolution: Literal["completed", "refunded"]
+    notes: str | None = None
 
 
 def _verification_counts(teacher: TeacherProfile) -> dict[str, int]:
@@ -218,8 +264,6 @@ async def get_stats(
     _payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.models.parent import ParentProfile
-
     total_teachers = await db.scalar(select(func.count(TeacherProfile.id))) or 0
     pending_verification = (
         await db.scalar(
@@ -263,6 +307,20 @@ async def get_stats(
         )
         or 0
     )
+    pending_refunds = (
+        await db.scalar(
+            select(func.coalesce(func.sum(Refund.amount_cents), 0)).where(
+                Refund.status.in_(["pending", "processing"])
+            )
+        )
+        or 0
+    )
+    open_disputes = (
+        await db.scalar(
+            select(func.count(Dispute.id)).where(Dispute.status == "open")
+        )
+        or 0
+    )
 
     return StatsResponse(
         total_teachers=total_teachers,
@@ -273,6 +331,8 @@ async def get_stats(
         confirmed_bookings=confirmed_bookings,
         total_revenue_cents=total_revenue,
         pending_payouts_cents=pending_payouts,
+        pending_refunds_cents=pending_refunds,
+        open_disputes=open_disputes,
     )
 
 
@@ -473,3 +533,218 @@ async def update_payout(
         send_payout_notification.apply_async(args=[str(payout_id)], countdown=3)
 
     return {"id": payout.id, "status": payout.status}
+
+
+@router.get("/refunds", response_model=list[RefundListItem])
+async def list_refunds(
+    refund_status: str | None = None,
+    _payload: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(Refund)
+        .options(
+            selectinload(Refund.payment)
+            .selectinload(Payment.booking)
+            .selectinload(Booking.parent)
+            .selectinload(ParentProfile.user),
+            selectinload(Refund.payment)
+            .selectinload(Payment.booking)
+            .selectinload(Booking.teacher)
+            .selectinload(TeacherProfile.user),
+        )
+        .order_by(Refund.created_at.desc())
+    )
+    if refund_status:
+        query = query.where(Refund.status == refund_status)
+
+    result = await db.scalars(query)
+    refunds = result.all()
+
+    return [
+        RefundListItem(
+            id=refund.id,
+            payment_id=refund.payment_id,
+            booking_id=refund.payment.booking_id,
+            parent_name=(
+                f"{refund.payment.booking.parent.user.first_name} {refund.payment.booking.parent.user.last_name}"
+            ),
+            teacher_name=(
+                f"{refund.payment.booking.teacher.user.first_name} {refund.payment.booking.teacher.user.last_name}"
+            ),
+            amount_cents=refund.amount_cents,
+            status=refund.status,
+            policy_code=refund.policy_code,
+            requested_by_role=refund.requested_by_role,
+            created_at=refund.created_at,
+        )
+        for refund in refunds
+    ]
+
+
+@router.patch("/refunds/{refund_id}")
+async def update_refund(
+    refund_id: UUID,
+    body: UpdateRefundRequest,
+    _payload: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    refund = await db.scalar(
+        select(Refund)
+        .where(Refund.id == refund_id)
+        .options(selectinload(Refund.payment))
+    )
+    if not refund:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refund not found")
+
+    allowed = {"processing", "refunded", "failed"}
+    if body.status not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"status must be one of: {', '.join(sorted(allowed))}",
+        )
+
+    refund.status = body.status
+    if body.gateway_reference:
+        refund.gateway_reference = body.gateway_reference
+    if body.notes:
+        refund.notes = body.notes
+
+    if body.status == "refunded":
+        refund.processed_at = datetime.now(UTC)
+        refund.payment.status = payment_status_after_refund(
+            refund.payment.amount_cents,
+            refund.amount_cents,
+        )
+        from app.tasks.notifications import send_refund_notification
+
+        send_refund_notification.apply_async(args=[str(refund.id)], countdown=3)
+    elif body.status == "failed":
+        refund.processed_at = None
+        refund.payment.status = "complete"
+
+    return {"id": refund.id, "status": refund.status}
+
+
+@router.get("/disputes", response_model=list[DisputeListItem])
+async def list_disputes(
+    dispute_status: str | None = None,
+    _payload: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(Dispute)
+        .options(
+            selectinload(Dispute.booking).selectinload(Booking.parent).selectinload(ParentProfile.user),
+            selectinload(Dispute.booking).selectinload(Booking.teacher).selectinload(TeacherProfile.user),
+            selectinload(Dispute.booking).selectinload(Booking.subject),
+        )
+        .order_by(Dispute.created_at.desc())
+    )
+    if dispute_status:
+        query = query.where(Dispute.status == dispute_status)
+
+    result = await db.scalars(query)
+    disputes = result.all()
+
+    return [
+        DisputeListItem(
+            id=dispute.id,
+            booking_id=dispute.booking_id,
+            parent_name=(
+                f"{dispute.booking.parent.user.first_name} {dispute.booking.parent.user.last_name}"
+            ),
+            teacher_name=(
+                f"{dispute.booking.teacher.user.first_name} {dispute.booking.teacher.user.last_name}"
+            ),
+            subject_name=dispute.booking.subject.name,
+            scheduled_at=dispute.booking.scheduled_at,
+            raised_by_role=dispute.raised_by_role,
+            reason=dispute.reason,
+            status=dispute.status,
+            resolution=dispute.resolution,
+            created_at=dispute.created_at,
+        )
+        for dispute in disputes
+    ]
+
+
+@router.patch("/disputes/{dispute_id}")
+async def resolve_dispute(
+    dispute_id: UUID,
+    body: ResolveDisputeRequest,
+    _payload: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    dispute = await db.scalar(
+        select(Dispute)
+        .where(Dispute.id == dispute_id)
+        .options(
+            selectinload(Dispute.booking)
+            .selectinload(Booking.payment)
+            .selectinload(Payment.payout),
+            selectinload(Dispute.booking)
+            .selectinload(Booking.payment)
+            .selectinload(Payment.refund),
+        )
+    )
+    if not dispute:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found")
+    if dispute.status != "open":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Dispute is already resolved")
+
+    booking = dispute.booking
+    payment = booking.payment
+    payout = payment.payout if payment else None
+
+    dispute.status = "resolved"
+    dispute.resolution = body.resolution
+    dispute.admin_notes = body.notes
+    dispute.resolved_at = datetime.now(UTC)
+
+    if body.resolution == "completed":
+        booking.status = "completed"
+        if payment and payout is None and booking.teacher_payout_cents > 0:
+            db.add(
+                Payout(
+                    teacher_id=booking.teacher_id,
+                    payment_id=payment.id,
+                    amount_cents=booking.teacher_payout_cents,
+                    status="pending",
+                    notes="Created after dispute was resolved as completed.",
+                )
+            )
+        elif payout and payout.status == "failed":
+            payout.status = "pending"
+            payout.notes = "Reopened after dispute was resolved as completed."
+    else:
+        booking.status = "cancelled"
+        booking.teacher_payout_cents = 0
+        booking.commission_cents = 0
+
+        if payout and payout.status != "paid":
+            payout.status = "failed"
+            payout.notes = "Cancelled because the dispute was resolved as refunded."
+
+        if payment:
+            refund = payment.refund
+            if refund is None:
+                refund = Refund(
+                    payment_id=payment.id,
+                    amount_cents=payment.amount_cents,
+                    status="pending",
+                    reason=dispute.reason,
+                    requested_by_role="admin",
+                    policy_code="dispute_refund",
+                    notes="Created from dispute resolution. Process manually in PayFast and then mark refunded.",
+                )
+                db.add(refund)
+            else:
+                refund.amount_cents = payment.amount_cents
+                refund.status = "pending"
+                refund.reason = dispute.reason
+                refund.requested_by_role = "admin"
+                refund.policy_code = "dispute_refund"
+                refund.notes = "Created from dispute resolution. Process manually in PayFast and then mark refunded."
+
+    return {"id": dispute.id, "status": dispute.status, "resolution": dispute.resolution}
