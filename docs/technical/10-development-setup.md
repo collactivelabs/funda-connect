@@ -151,7 +151,7 @@ services:
       - "3001:3001
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
-    command: npm run dev
+    command: pnpm dev
 
   db:
     image: postgres:16-alpine
@@ -247,10 +247,10 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 cd frontend
 
 # Install dependencies
-npm install
+pnpm install
 
 # Start development server
-npm run dev
+pnpm dev
 # → http://localhost:3001
 ```
 
@@ -329,14 +329,11 @@ pytest -v -s
 ```bash
 cd frontend
 
-# Run unit tests
-npm test
+# Run the current frontend smoke test
+pnpm test
 
-# Run with coverage
-npm run test:coverage
-
-# Run E2E tests (requires running dev server)
-npm run test:e2e
+# Run type checking directly
+pnpm typecheck
 ```
 
 ### 6.3 API Testing
@@ -377,11 +374,11 @@ logs:                   ## Tail all logs
 
 test:                   ## Run all tests
 	cd backend && pytest --cov=app
-	cd frontend && npm test
+	cd frontend && pnpm test
 
 lint:                   ## Run linters
 	cd backend && ruff check . && mypy app/
-	cd frontend && npm run lint && npm run type-check
+	cd frontend && pnpm lint && pnpm typecheck
 
 migrate:                ## Run database migrations
 	cd backend && alembic upgrade head
@@ -397,7 +394,7 @@ reset-db:               ## Reset database (DESTRUCTIVE)
 
 format:                 ## Auto-format code
 	cd backend && ruff format .
-	cd frontend && npm run format
+	@echo "Frontend formatter script not configured yet"
 ```
 
 ---

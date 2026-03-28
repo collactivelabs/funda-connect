@@ -70,6 +70,10 @@ export const apiClient = {
   auth: {
     register: (body: unknown) => api.post("/auth/register", body),
     login: (body: unknown) => api.post("/auth/login", body),
+    requestEmailVerification: (body: unknown) => api.post("/auth/verify-email/request", body),
+    verifyEmail: (body: unknown) => api.post("/auth/verify-email", body),
+    forgotPassword: (body: unknown) => api.post("/auth/forgot-password", body),
+    resetPassword: (body: unknown) => api.post("/auth/reset-password", body),
     logout: () => api.post("/auth/logout"),
     me: () => api.get("/auth/me"),
   },

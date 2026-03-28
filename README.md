@@ -99,6 +99,8 @@ make payfast-tunnel  # Start an ngrok tunnel for PayFast webhooks
 make payfast-webhook-path  # Show the public ITN path to use in PAYFAST_NOTIFY_URL
 ```
 
+Frontend tooling uses `pnpm`. The current `pnpm test` script is a lightweight smoke check based on TypeScript validation until dedicated frontend tests are added.
+
 ---
 
 ## Environment Variables
@@ -115,6 +117,9 @@ POSTGRES_PASSWORD=
 SECRET_KEY=                        # Long random string
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
+EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS=24
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=60
+APP_BASE_URL=http://localhost:3001
 
 # PayFast
 PAYFAST_MERCHANT_ID=
@@ -209,3 +214,9 @@ pending_payment → confirmed → completed → reviewed
 ```
 
 Recurring bookings: the root booking goes through PayFast. On payment confirmation, N−1 child bookings are created as `confirmed` at weekly intervals, all referencing the root via `recurring_booking_id`.
+
+## Auth Flows
+
+- Email verification links are sent on registration and can be resent from the dashboard while an account is still unverified.
+- Password reset is available via `/forgot-password` and `/reset-password`.
+- Refresh tokens now rotate on `/auth/refresh` and are revoked on logout or password reset.

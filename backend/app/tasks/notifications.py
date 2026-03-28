@@ -7,6 +7,40 @@ from app.tasks.celery_app import celery_app
 logger = structlog.get_logger()
 
 
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def send_email_verification_message(
+    self,
+    to: str,
+    first_name: str,
+    verify_url: str,
+) -> None:
+    try:
+        from app.services.email import email_verification_link
+
+        email_verification_link(to=to, first_name=first_name, verify_url=verify_url)
+        logger.info("send_email_verification_message.done", to=to)
+    except Exception as exc:
+        logger.error("send_email_verification_message.error", to=to, error=str(exc))
+        raise self.retry(exc=exc) from exc
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def send_password_reset_message(
+    self,
+    to: str,
+    first_name: str,
+    reset_url: str,
+) -> None:
+    try:
+        from app.services.email import password_reset_link
+
+        password_reset_link(to=to, first_name=first_name, reset_url=reset_url)
+        logger.info("send_password_reset_message.done", to=to)
+    except Exception as exc:
+        logger.error("send_password_reset_message.error", to=to, error=str(exc))
+        raise self.retry(exc=exc) from exc
+
+
 async def _get_db():
     """Yield a throwaway async session for use inside Celery workers."""
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine

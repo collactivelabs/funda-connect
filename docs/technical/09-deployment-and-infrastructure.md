@@ -266,7 +266,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: cd frontend && npm ci && npm run lint && npm run type-check
+      - run: corepack enable && cd frontend && pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck
 
   build-and-deploy:
     needs: test

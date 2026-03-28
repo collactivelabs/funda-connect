@@ -180,3 +180,26 @@ def payout_processed(to: str, teacher_name: str, amount_cents: int, bank_referen
 <a class="btn" href="https://fundaconnect.co.za/teacher">View my account</a>
 """
     _send(to, f"FundaConnect payout of {amount} processed", _base(content))
+
+
+def email_verification_link(to: str, first_name: str, verify_url: str) -> None:
+    content = f"""
+<h2>Verify your email</h2>
+<p>Hi {first_name}, welcome to FundaConnect.</p>
+<p>Please verify your email address to secure your account.</p>
+<a class="btn" href="{verify_url}">Verify my email</a>
+<p style="margin-top:24px;font-size:13px;color:#6b7280;">If the button does not work, copy and paste this link into your browser:</p>
+<p style="font-size:13px;word-break:break-all;color:#6b7280;">{verify_url}</p>
+"""
+    _send(to, "Verify your FundaConnect email address", _base(content))
+
+
+def password_reset_link(to: str, first_name: str, reset_url: str) -> None:
+    content = f"""
+<h2>Reset your password</h2>
+<p>Hi {first_name}, we received a request to reset your FundaConnect password.</p>
+<a class="btn" href="{reset_url}">Choose a new password</a>
+<p style="margin-top:24px;font-size:13px;color:#6b7280;">If you did not request this, you can ignore this email.</p>
+<p style="font-size:13px;word-break:break-all;color:#6b7280;">{reset_url}</p>
+"""
+    _send(to, "Reset your FundaConnect password", _base(content))

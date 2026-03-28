@@ -4,15 +4,15 @@ WORKDIR /app
 
 # Install dependencies
 FROM base AS deps
-COPY package*.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 
 # Build
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN corepack enable && pnpm build
 
 # Production image
 FROM base AS runner

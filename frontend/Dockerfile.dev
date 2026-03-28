@@ -5,8 +5,8 @@ WORKDIR /app
 # Install Linux-native node_modules into the image layer.
 # A named Docker volume will overlay /app/node_modules at runtime,
 # preserving these Linux binaries separately from the host's Mac packages.
-COPY package*.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 
 EXPOSE 3001
-CMD ["npm", "run", "dev", "--", "--port", "3001"]
+CMD ["pnpm", "exec", "next", "dev", "--port", "3001"]

@@ -246,7 +246,7 @@ async def validate_upload(file: UploadFile):
 ```
 
 ### 6.4 Dependency Security
-- `pip-audit` and `npm audit` run in CI pipeline
+- `pip-audit` and `pnpm audit` run in CI pipeline
 - Dependabot enabled for automated security updates
 - No `*` version pins — all dependencies pinned to specific versions
 - Container base images scanned with Trivy

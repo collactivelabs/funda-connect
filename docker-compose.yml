@@ -140,7 +140,7 @@ services:
       - "3001:3001"
     depends_on:
       - backend
-    command: npm run dev -- --port 3001
+    command: pnpm exec next dev --port 3001
 
 volumes:
   postgres_data:

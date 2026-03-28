@@ -15,12 +15,13 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
-def create_access_token(user_id: UUID, email: str, role: str) -> str:
+def create_access_token(user_id: UUID, email: str, role: str, email_verified: bool) -> str:
     expire = datetime.now(UTC) + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
         "email": email,
         "role": role,
+        "email_verified": email_verified,
         "exp": expire,
         "iat": datetime.now(UTC),
     }
@@ -34,11 +35,12 @@ def decode_access_token(token: str) -> dict:
         raise ValueError("Invalid token") from e
 
 
-def create_refresh_token(user_id: UUID) -> str:
+def create_refresh_token(user_id: UUID, jti: str) -> str:
     expire = datetime.now(UTC) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": str(user_id),
         "type": "refresh",
+        "jti": jti,
         "exp": expire,
         "iat": datetime.now(UTC),
     }

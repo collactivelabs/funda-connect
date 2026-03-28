@@ -1,7 +1,7 @@
 import json
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     SECRET_KEY: str = "change-me"
     DEBUG: bool = True
+    APP_BASE_URL: str = Field(
+        default="http://localhost:3001",
+        validation_alias=AliasChoices("APP_BASE_URL", "NEXT_PUBLIC_APP_URL"),
+    )
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://fundaconnect:fundaconnect@localhost:5432/fundaconnect"
@@ -28,6 +32,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS: int = 24
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 60
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
