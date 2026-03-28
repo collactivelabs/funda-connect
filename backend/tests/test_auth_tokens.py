@@ -9,6 +9,9 @@ from app.services.auth_tokens import (
     issue_email_verification_token,
     issue_password_reset_token,
     issue_refresh_session,
+    list_refresh_sessions,
+    revoke_other_refresh_sessions,
+    revoke_session_by_id,
     rotate_refresh_session,
 )
 
@@ -81,14 +84,31 @@ async def test_refresh_rotation_invalidates_old_token_and_issues_new_one():
     redis = FakeRedis()
     user_id = uuid4()
 
-    refresh_token = await issue_refresh_session(user_id, redis)
-    rotated_token = await rotate_refresh_session(refresh_token, redis)
+    refresh_token = await issue_refresh_session(
+        user_id,
+        redis,
+        user_agent="Safari",
+        ip_address="127.0.0.1",
+    )
+    rotated_token = await rotate_refresh_session(
+        refresh_token,
+        redis,
+        user_agent="Safari",
+        ip_address="127.0.0.1",
+    )
 
     old_payload = decode_refresh_token(refresh_token)
     new_payload = decode_refresh_token(rotated_token)
 
     assert old_payload["jti"] != new_payload["jti"]
     assert old_payload["sub"] == new_payload["sub"] == str(user_id)
+    assert old_payload["sid"] == new_payload["sid"]
+
+    sessions = await list_refresh_sessions(user_id, old_payload["sid"], redis)
+    assert len(sessions) == 1
+    assert sessions[0]["current"] is True
+    assert sessions[0]["user_agent"] == "Safari"
+    assert sessions[0]["ip_address"] == "127.0.0.1"
 
 
 @pytest.mark.asyncio
@@ -104,3 +124,42 @@ async def test_refresh_reuse_detection_revokes_rotated_session_family():
 
     with pytest.raises(ValueError, match="Invalid refresh token"):
         await rotate_refresh_session(rotated_token, redis)
+
+
+@pytest.mark.asyncio
+async def test_revoke_specific_session_only_removes_target_session():
+    redis = FakeRedis()
+    user_id = uuid4()
+
+    current_token = await issue_refresh_session(user_id, redis, user_agent="Chrome")
+    other_token = await issue_refresh_session(user_id, redis, user_agent="Firefox")
+
+    current_session_id = decode_refresh_token(current_token)["sid"]
+    other_session_id = decode_refresh_token(other_token)["sid"]
+
+    revoked = await revoke_session_by_id(user_id, other_session_id, redis)
+
+    assert revoked is True
+    sessions = await list_refresh_sessions(user_id, current_session_id, redis)
+    assert len(sessions) == 1
+    assert sessions[0]["id"] == current_session_id
+    assert sessions[0]["current"] is True
+
+
+@pytest.mark.asyncio
+async def test_revoke_other_sessions_preserves_current_session():
+    redis = FakeRedis()
+    user_id = uuid4()
+
+    current_token = await issue_refresh_session(user_id, redis, user_agent="Chrome")
+    await issue_refresh_session(user_id, redis, user_agent="Firefox")
+    await issue_refresh_session(user_id, redis, user_agent="Edge")
+
+    current_session_id = decode_refresh_token(current_token)["sid"]
+
+    revoked = await revoke_other_refresh_sessions(user_id, current_session_id, redis)
+
+    assert revoked == 2
+    sessions = await list_refresh_sessions(user_id, current_session_id, redis)
+    assert len(sessions) == 1
+    assert sessions[0]["id"] == current_session_id

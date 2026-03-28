@@ -11,6 +11,10 @@ export const REQUIRED_VERIFICATION_DOCUMENTS: ReadonlyArray<{
   { value: "reference_letter", label: "Reference Letter" },
 ];
 
+export function getVerificationDocumentLabel(type: VerificationDocumentType | string): string {
+  return REQUIRED_VERIFICATION_DOCUMENTS.find((document) => document.value === type)?.label ?? type;
+}
+
 function hasUsableDocument(
   documents: VerificationDocument[],
   documentType: VerificationDocumentType

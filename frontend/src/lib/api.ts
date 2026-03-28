@@ -1,5 +1,5 @@
 import axios, { type AxiosError } from "axios";
-import type { ApiError } from "@/types";
+import type { ApiError, AuthSession } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -70,6 +70,9 @@ export const apiClient = {
   auth: {
     register: (body: unknown) => api.post("/auth/register", body),
     login: (body: unknown) => api.post("/auth/login", body),
+    listSessions: () => api.get<AuthSession[]>("/auth/sessions"),
+    revokeSession: (sessionId: string) => api.delete(`/auth/sessions/${sessionId}`),
+    revokeOtherSessions: () => api.post("/auth/sessions/revoke-others"),
     requestEmailVerification: (body: unknown) => api.post("/auth/verify-email/request", body),
     verifyEmail: (body: unknown) => api.post("/auth/verify-email", body),
     forgotPassword: (body: unknown) => api.post("/auth/forgot-password", body),
@@ -99,6 +102,7 @@ export const apiClient = {
         },
       }),
     listDocuments: () => api.get("/teachers/me/documents"),
+    getDocumentAccess: (documentId: string) => api.get(`/teachers/me/documents/${documentId}/access`),
     uploadDocument: (documentType: string, form: FormData) =>
       api.post(`/teachers/me/documents?document_type=${encodeURIComponent(documentType)}`, form, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -134,6 +138,14 @@ export const apiClient = {
     getStats: () => api.get("/admin/stats"),
     listTeachers: (params?: { verification_status?: string }) =>
       api.get("/admin/teachers", { params }),
+    getTeacherVerification: (id: string) => api.get(`/admin/teachers/${id}/verification`),
+    reviewTeacherDocument: (
+      teacherId: string,
+      documentId: string,
+      body: { status: "approved" | "rejected"; reviewer_notes?: string }
+    ) => api.patch(`/admin/teachers/${teacherId}/documents/${documentId}`, body),
+    getTeacherDocumentAccess: (teacherId: string, documentId: string) =>
+      api.get(`/admin/teachers/${teacherId}/documents/${documentId}/access`),
     verifyTeacher: (id: string, body: { action: string; notes?: string }) =>
       api.patch(`/admin/teachers/${id}/verify`, body),
     togglePremium: (id: string) => api.patch(`/admin/teachers/${id}/premium`),

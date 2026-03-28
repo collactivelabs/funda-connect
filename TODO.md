@@ -6,8 +6,8 @@ This file tracks outstanding work identified by comparing the original technical
 
 ## Recommended Order
 
-- [ ] Establish a safer foundation first: tests, frontend scripts, and CI.
-- [ ] Harden authentication flows next.
+- [x] Establish a safer foundation first: tests, frontend scripts, and CI.
+- [x] Harden authentication flows next.
 - [ ] Build the full admin verification workflow.
 - [ ] Complete the remaining payments/reporting/refund work.
 - [ ] Finish notifications, security, and documentation cleanup.
@@ -26,14 +26,14 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Add forgot-password and reset-password flow.
 - [ ] Add Google OAuth login.
 - [x] Replace simple stateless refresh handling with rotation and reuse detection.
-- [ ] Add session listing and session revocation support.
+- [x] Add session listing and session revocation support.
 
 ## 3. Teacher Verification Workflow
 
-- [ ] Add admin review of individual verification documents, not only whole-teacher status changes.
-- [ ] Surface reviewer notes per document.
-- [ ] Add secure/private document viewing flow for admins and teachers.
-- [ ] Improve verification queue details in the admin dashboard.
+- [x] Add admin review of individual verification documents, not only whole-teacher status changes.
+- [x] Surface reviewer notes per document.
+- [x] Add secure/private document viewing flow for admins and teachers.
+- [x] Improve verification queue details in the admin dashboard.
 - [ ] Decide whether to implement automated SACE/NRSO checks or remove them from active scope.
 
 ## 4. Payments, Payouts, And Reporting
@@ -87,4 +87,5 @@ This file tracks outstanding work identified by comparing the original technical
 ## Notes
 
 - Recent booking, PayFast, admin, onboarding, and dashboard fixes were already completed and committed before this TODO file was created.
+- Auth hardening, session management, and admin document-level verification review were added after the initial backlog draft.
 - This list should be treated as a living backlog, not as a promise that every original doc item still belongs in scope.

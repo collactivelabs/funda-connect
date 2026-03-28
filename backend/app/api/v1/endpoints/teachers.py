@@ -40,10 +40,16 @@ from app.services.scheduling import (
 )
 from app.schemas.teacher import (
     AddSubjectRequest,
+    DocumentAccessResponse,
     TeacherProfileResponse,
     TeacherSubjectResponse,
     UpdateProfileRequest,
     VerificationDocumentResponse,
+)
+from app.services.verification_documents import (
+    build_document_access_url,
+    derive_teacher_verification_status,
+    has_uploaded_all_required_documents,
 )
 
 router = APIRouter()
@@ -238,6 +244,7 @@ _ALLOWED_DOC_TYPES = {
     "id_document", "qualification", "sace_certificate", "nrso_clearance", "reference_letter"
 }
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+_DOCUMENT_ACCESS_TTL_SECONDS = 900
 
 
 def _upload_to_s3(key: str, data: bytes, content_type: str) -> str:
@@ -257,6 +264,22 @@ def _upload_to_s3(key: str, data: bytes, content_type: str) -> str:
     return f"https://{settings.AWS_S3_BUCKET}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"
 
 
+def _sync_profile_verification_state(profile: TeacherProfile) -> None:
+    profile.verification_status = derive_teacher_verification_status(
+        profile.verification_status,
+        profile.documents,
+    )
+    if profile.verification_status != "verified":
+        profile.is_listed = False
+
+
+def _document_access_response(document: VerificationDocument) -> DocumentAccessResponse:
+    return DocumentAccessResponse(
+        url=build_document_access_url(document.file_url, expires_in=_DOCUMENT_ACCESS_TTL_SECONDS),
+        expires_in_seconds=_DOCUMENT_ACCESS_TTL_SECONDS,
+    )
+
+
 @router.get("/me/documents", response_model=list[VerificationDocumentResponse])
 async def list_my_documents(
     payload: dict = Depends(require_teacher),
@@ -270,6 +293,19 @@ async def list_my_documents(
         .order_by(VerificationDocument.created_at.desc())
     )
     return result.all()
+
+
+@router.get("/me/documents/{document_id}/access", response_model=DocumentAccessResponse)
+async def get_my_document_access(
+    document_id: UUID,
+    payload: dict = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await _get_my_profile(payload, db)
+    document = await db.get(VerificationDocument, document_id)
+    if not document or document.teacher_id != profile.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    return _document_access_response(document)
 
 
 @router.post(
@@ -319,9 +355,17 @@ async def upload_document(
     )
     db.add(doc)
     await db.flush()
+    documents_result = await db.scalars(
+        select(VerificationDocument)
+        .where(VerificationDocument.teacher_id == profile.id)
+        .order_by(VerificationDocument.created_at.desc())
+    )
+    profile.documents = documents_result.all()
+    _sync_profile_verification_state(profile)
 
     from app.tasks.notifications import notify_admin_verification_submitted
-    notify_admin_verification_submitted.apply_async(args=[str(profile.id)], countdown=5)
+    if has_uploaded_all_required_documents(profile.documents):
+        notify_admin_verification_submitted.apply_async(args=[str(profile.id)], countdown=5)
 
     return doc
 

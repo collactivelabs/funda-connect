@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -83,5 +84,13 @@ class VerificationDocumentResponse(BaseModel):
     file_url: str
     file_name: str
     status: str
+    created_at: datetime
+    reviewer_notes: str | None = None
+    reviewed_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentAccessResponse(BaseModel):
+    url: str
+    expires_in_seconds: int

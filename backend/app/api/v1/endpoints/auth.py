@@ -1,12 +1,17 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user_payload, get_db
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    decode_refresh_token,
+    hash_password,
+    verify_password,
+)
 from app.models.parent import ParentProfile
 from app.models.teacher import TeacherProfile
 from app.models.user import User
@@ -17,6 +22,7 @@ from app.schemas.auth import (
     MessageResponse,
     RegisterRequest,
     ResetPasswordRequest,
+    SessionResponse,
     UserResponse,
     VerifyEmailRequest,
 )
@@ -26,8 +32,11 @@ from app.services.auth_tokens import (
     issue_email_verification_token,
     issue_password_reset_token,
     issue_refresh_session,
+    list_refresh_sessions,
     revoke_all_refresh_sessions,
+    revoke_other_refresh_sessions,
     revoke_refresh_session,
+    revoke_session_by_id,
     rotate_refresh_session,
 )
 from app.tasks.notifications import (
@@ -57,7 +66,35 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
     response.set_cookie(key=_REFRESH_COOKIE, value=token, **_cookie_options())
 
 
-async def _build_auth_response(user: User) -> dict:
+def _client_ip(request: Request) -> str | None:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+def _client_user_agent(request: Request) -> str | None:
+    return request.headers.get("user-agent")
+
+
+def _user_id_from_refresh_token(refresh_token: str) -> UUID:
+    payload = decode_refresh_token(refresh_token)
+    return UUID(payload["sub"])
+
+
+def _session_id_from_refresh_token(refresh_token: str | None) -> str | None:
+    if not refresh_token:
+        return None
+    try:
+        payload = decode_refresh_token(refresh_token)
+    except ValueError:
+        return None
+
+    session_id = payload.get("sid")
+    return session_id if isinstance(session_id, str) and session_id else None
+
+
+async def _build_auth_response(user: User, request: Request) -> dict:
     return {
         "access_token": create_access_token(
             user.id,
@@ -65,7 +102,11 @@ async def _build_auth_response(user: User) -> dict:
             user.role,
             user.email_verified,
         ),
-        "refresh_token": await issue_refresh_session(user.id),
+        "refresh_token": await issue_refresh_session(
+            user.id,
+            user_agent=_client_user_agent(request),
+            ip_address=_client_ip(request),
+        ),
         "user": user,
     }
 
@@ -73,6 +114,7 @@ async def _build_auth_response(user: User) -> dict:
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=AuthResponse)
 async def register(
     body: RegisterRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
@@ -110,7 +152,7 @@ async def register(
         countdown=2,
     )
 
-    tokens = await _build_auth_response(user)
+    tokens = await _build_auth_response(user, request)
     _set_refresh_cookie(response, tokens["refresh_token"])
     return AuthResponse(
         access_token=tokens["access_token"],
@@ -121,6 +163,7 @@ async def register(
 @router.post("/login", response_model=AuthResponse)
 async def login(
     body: LoginRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
@@ -134,7 +177,7 @@ async def login(
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
-    tokens = await _build_auth_response(user)
+    tokens = await _build_auth_response(user, request)
     _set_refresh_cookie(response, tokens["refresh_token"])
     return AuthResponse(
         access_token=tokens["access_token"],
@@ -144,6 +187,7 @@ async def login(
 
 @router.post("/refresh", response_model=AuthResponse)
 async def refresh_token(
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
     refresh_token_cookie: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
@@ -153,7 +197,11 @@ async def refresh_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
 
     try:
-        new_refresh_token = await rotate_refresh_session(refresh_token_cookie)
+        new_refresh_token = await rotate_refresh_session(
+            refresh_token_cookie,
+            user_agent=_client_user_agent(request),
+            ip_address=_client_ip(request),
+        )
     except ValueError as exc:
         response.delete_cookie(_REFRESH_COOKIE, path="/")
         raise HTTPException(
@@ -174,13 +222,6 @@ async def refresh_token(
     )
     _set_refresh_cookie(response, new_refresh_token)
     return AuthResponse(access_token=access_token, user=UserResponse.model_validate(user))
-
-
-def _user_id_from_refresh_token(refresh_token: str):
-    from app.core.security import decode_refresh_token
-
-    payload = decode_refresh_token(refresh_token)
-    return UUID(payload["sub"])
 
 
 @router.post("/logout", response_model=MessageResponse)
@@ -205,6 +246,49 @@ async def get_me(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UserResponse.model_validate(user)
+
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    payload: dict = Depends(get_current_user_payload),
+    refresh_token_cookie: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
+):
+    """List active refresh sessions for the current user."""
+    user_id = UUID(payload["sub"])
+    current_session_id = _session_id_from_refresh_token(refresh_token_cookie)
+    sessions = await list_refresh_sessions(user_id, current_session_id)
+    return [SessionResponse.model_validate(session) for session in sessions]
+
+
+@router.delete("/sessions/{session_id}", response_model=MessageResponse)
+async def revoke_session(
+    session_id: str,
+    response: Response,
+    payload: dict = Depends(get_current_user_payload),
+    refresh_token_cookie: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
+):
+    """Revoke a specific session for the current user."""
+    user_id = UUID(payload["sub"])
+    revoked = await revoke_session_by_id(user_id, session_id)
+    if not revoked:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if session_id == _session_id_from_refresh_token(refresh_token_cookie):
+        response.delete_cookie(_REFRESH_COOKIE, path="/")
+
+    return MessageResponse(message="Session revoked")
+
+
+@router.post("/sessions/revoke-others", response_model=MessageResponse)
+async def revoke_other_sessions(
+    payload: dict = Depends(get_current_user_payload),
+    refresh_token_cookie: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
+):
+    """Revoke all other active sessions for the current user."""
+    user_id = UUID(payload["sub"])
+    current_session_id = _session_id_from_refresh_token(refresh_token_cookie)
+    revoked = await revoke_other_refresh_sessions(user_id, current_session_id)
+    return MessageResponse(message=f"Revoked {revoked} other session(s).")
 
 
 @router.post("/verify-email/request", response_model=MessageResponse)

@@ -21,6 +21,16 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface AuthSession {
+  id: string;
+  current: boolean;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+}
+
 // ── Teacher ───────────────────────────────────────────────────
 export type VerificationStatus =
   | "pending"
@@ -71,6 +81,9 @@ export interface VerificationDocument {
   fileUrl: string;
   fileName: string;
   status: VerificationDocumentStatus;
+  createdAt: string;
+  reviewerNotes?: string | null;
+  reviewedAt?: string | null;
 }
 
 // ── Parent & Learner ──────────────────────────────────────────

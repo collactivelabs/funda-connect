@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { ReviewTeacherDocumentsDialog } from "@/components/admin/review-teacher-documents-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,6 +52,11 @@ interface AdminTeacher {
   province: string | null;
   subjectCount: number;
   documentCount: number;
+  approvedDocumentCount: number;
+  pendingDocumentCount: number;
+  rejectedDocumentCount: number;
+  allRequiredDocumentsUploaded: boolean;
+  allRequiredDocumentsApproved: boolean;
 }
 
 interface AdminPayout {
@@ -106,30 +112,39 @@ export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [teachers, setTeachers] = useState<AdminTeacher[]>([]);
   const [payouts, setPayouts] = useState<AdminPayout[]>([]);
-  const [teacherFilter, setTeacherFilter] = useState("pending");
+  const [teacherFilter, setTeacherFilter] = useState("under_review");
   const [payoutFilter, setPayoutFilter] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [reviewTeacherId, setReviewTeacherId] = useState<string | null>(null);
 
   // Guard: admin only
   useEffect(() => {
     if (user && user.role !== "admin") router.replace("/");
   }, [user, router]);
 
-  useEffect(() => {
+  const loadStats = useCallback(() => {
     apiClient.admin.getStats()
       .then(({ data }) => setStats(data as Stats))
       .catch(() => null);
   }, []);
 
-  useEffect(() => {
+  const loadTeachers = useCallback(() => {
     setLoading(true);
-    apiClient.admin
+    return apiClient.admin
       .listTeachers(teacherFilter ? { verification_status: teacherFilter } : undefined)
       .then(({ data }) => setTeachers(data as AdminTeacher[]))
       .catch(() => null)
       .finally(() => setLoading(false));
   }, [teacherFilter]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
+    loadTeachers();
+  }, [loadTeachers]);
 
   useEffect(() => {
     apiClient.admin
@@ -142,19 +157,8 @@ export default function AdminPage() {
     setActionLoading(`verify-${teacherId}-${action}`);
     try {
       await apiClient.admin.verifyTeacher(teacherId, { action });
-      setTeachers((prev) =>
-        prev.map((t) =>
-          t.id === teacherId
-            ? {
-                ...t,
-                verificationStatus: action === "verify" ? "verified" : action === "reject" ? "rejected" : "suspended",
-                isListed: action === "verify",
-              }
-            : t
-        )
-      );
-      // refresh stats
-      apiClient.admin.getStats().then(({ data }) => setStats(data as Stats)).catch(() => null);
+      await loadTeachers();
+      loadStats();
     } finally {
       setActionLoading(null);
     }
@@ -179,7 +183,7 @@ export default function AdminPage() {
       setPayouts((prev) =>
         prev.map((p) => (p.id === payoutId ? { ...p, status: newStatus } : p))
       );
-      apiClient.admin.getStats().then(({ data }) => setStats(data as Stats)).catch(() => null);
+      loadStats();
     } finally {
       setActionLoading(null);
     }
@@ -269,15 +273,29 @@ export default function AdminPage() {
                     <TableCell className="text-right text-sm">
                       {t.hourlyRateCents ? formatRand(t.hourlyRateCents) + "/hr" : "—"}
                     </TableCell>
-                    <TableCell className="text-right text-sm">{t.documentCount}</TableCell>
+                    <TableCell className="text-right text-sm">
+                      <div className="space-y-1">
+                        <div>{t.documentCount} total</div>
+                        <div className="text-xs text-muted-foreground">
+                          {t.approvedDocumentCount} approved · {t.pendingDocumentCount} pending · {t.rejectedDocumentCount} rejected
+                        </div>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right text-sm">{t.subjectCount}</TableCell>
                     <TableCell>
                       <div className="flex gap-1 justify-end flex-wrap">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setReviewTeacherId(t.id)}
+                        >
+                          Review docs
+                        </Button>
                         {t.verificationStatus !== "verified" && (
                           <Button
                             size="sm"
                             variant="default"
-                            disabled={actionLoading === `verify-${t.id}-verify`}
+                            disabled={!t.allRequiredDocumentsApproved || actionLoading === `verify-${t.id}-verify`}
                             onClick={() => handleVerify(t.id, "verify")}
                           >
                             Verify
@@ -403,6 +421,18 @@ export default function AdminPage() {
           )}
         </CardContent>
       </Card>
+
+      <ReviewTeacherDocumentsDialog
+        teacherId={reviewTeacherId}
+        open={reviewTeacherId !== null}
+        onOpenChange={(open) => {
+          if (!open) setReviewTeacherId(null);
+        }}
+        onUpdated={() => {
+          void loadTeachers();
+          loadStats();
+        }}
+      />
     </div>
   );
 }

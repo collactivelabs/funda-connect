@@ -35,12 +35,13 @@ def decode_access_token(token: str) -> dict:
         raise ValueError("Invalid token") from e
 
 
-def create_refresh_token(user_id: UUID, jti: str) -> str:
+def create_refresh_token(user_id: UUID, jti: str, session_id: str) -> str:
     expire = datetime.now(UTC) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": str(user_id),
         "type": "refresh",
         "jti": jti,
+        "sid": session_id,
         "exp": expire,
         "iat": datetime.now(UTC),
     }

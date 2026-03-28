@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   REQUIRED_VERIFICATION_DOCUMENTS,
+  getVerificationDocumentLabel,
   getMissingRequiredDocumentTypes,
   hasUploadedAllRequiredDocuments,
 } from "@/lib/teacher-documents";
@@ -46,6 +47,7 @@ export function UploadDocumentDialog({
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(null);
   const [uploadedDocuments, setUploadedDocuments] = useState<VerificationDocument[]>(documents);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -103,8 +105,19 @@ export function UploadDocumentDialog({
     }
   }
 
-  function labelFor(type: string) {
-    return REQUIRED_VERIFICATION_DOCUMENTS.find((document) => document.value === type)?.label ?? type;
+  async function handleOpenDocument(documentId: string) {
+    setOpeningDocumentId(documentId);
+    setError("");
+    try {
+      const { data } = await apiClient.teachers.getDocumentAccess(documentId);
+      window.open((data as { url: string }).url, "_blank", "noopener,noreferrer");
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail;
+      setError(detail ?? "Could not open this document.");
+    } finally {
+      setOpeningDocumentId(null);
+    }
   }
 
   return (
@@ -121,13 +134,35 @@ export function UploadDocumentDialog({
         {uploadedDocuments.length > 0 && (
           <div className="space-y-2 mb-2">
             {uploadedDocuments.map((doc) => (
-              <div key={doc.id} className="flex items-center justify-between text-sm py-1">
-                <span className="text-muted-foreground truncate mr-2">{labelFor(doc.documentType)}</span>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs text-muted-foreground truncate max-w-32">{doc.fileName}</span>
-                  <Badge variant={STATUS_VARIANT[doc.status] ?? "outline"} className="text-xs">
-                    {doc.status}
-                  </Badge>
+              <div key={doc.id} className="rounded-lg border border-border/70 px-3 py-2">
+                <div className="flex items-start justify-between gap-3 text-sm">
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium">{getVerificationDocumentLabel(doc.documentType)}</p>
+                    <p className="truncate text-xs text-muted-foreground">{doc.fileName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Uploaded: {new Date(doc.createdAt).toLocaleDateString("en-ZA")}
+                    </p>
+                    {doc.reviewerNotes && (
+                      <p className="text-xs text-muted-foreground">
+                        Review note: {doc.reviewerNotes}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <Badge variant={STATUS_VARIANT[doc.status] ?? "outline"} className="text-xs">
+                      {doc.status}
+                    </Badge>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={openingDocumentId === doc.id}
+                      onClick={() => void handleOpenDocument(doc.id)}
+                    >
+                      {openingDocumentId === doc.id ? "Opening…" : "View"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}

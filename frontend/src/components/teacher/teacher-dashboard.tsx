@@ -77,6 +77,7 @@ export function TeacherDashboard() {
 
   const statusInfo = VERIFICATION_LABELS[profile.verificationStatus] ?? VERIFICATION_LABELS.pending;
   const documentsComplete = hasUploadedAllRequiredDocuments(documents);
+  const rejectedDocuments = documents.filter((document) => document.status === "rejected");
 
   return (
     <div className="space-y-8">
@@ -93,13 +94,19 @@ export function TeacherDashboard() {
       </div>
 
       {/* Verification prompt */}
-      {profile.verificationStatus === "pending" && (
+      {(profile.verificationStatus === "pending" || profile.verificationStatus === "under_review" || profile.verificationStatus === "rejected") && (
         <Alert>
           <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
             <span>
-              {documentsComplete
-                ? "All required verification documents have been uploaded. Your account is now waiting for admin review."
-                : "Your account is pending verification. Upload all five required verification documents to move your account into review."}
+              {profile.verificationStatus === "rejected"
+                ? rejectedDocuments.length > 0
+                  ? "One or more verification documents need changes. Review the admin notes, replace the rejected documents, and your account will move back into review."
+                  : "Your verification was rejected. Review your documents and upload replacements where needed."
+                : profile.verificationStatus === "under_review"
+                  ? "Your verification documents are currently under admin review. You can still open the document list to check any notes that come back."
+                  : documentsComplete
+                    ? "All required verification documents have been uploaded. Your account is now waiting for admin review."
+                    : "Your account is pending verification. Upload all five required verification documents to move your account into review."}
             </span>
             <UploadDocumentDialog documents={documents} onDocumentsChange={setDocuments} />
           </AlertDescription>
