@@ -9,31 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
+import { useReferenceData } from "@/lib/reference-data";
 import type { Subject, TeacherProfile, TeacherSearchParams } from "@/types";
 import { TeacherCard } from "./teacher-card";
 
-const CURRICULA = ["CAPS", "Cambridge", "IEB"] as const;
-const GRADES = [
-  "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-  "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-];
 const PROVINCES = [
   "Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal",
   "Limpopo", "Mpumalanga", "North West", "Northern Cape", "Western Cape",
 ];
-
-function FilterSkeleton() {
-  return (
-    <div className="space-y-4">
-      {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="space-y-2">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-9 w-full" />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function ResultsSkeleton() {
   return (
@@ -50,6 +33,7 @@ export function TeacherSearch() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
+  const { curricula, gradeLevels } = useReferenceData();
 
   const [filters, setFilters] = useState<TeacherSearchParams>({});
 
@@ -122,15 +106,15 @@ export function TeacherSearch() {
               <Label>Curriculum</Label>
               <Select
                 value={filters.curriculum ?? ""}
-                onValueChange={(v) => v ? setFilter("curriculum", v as typeof CURRICULA[number]) : clearFilter("curriculum")}
+                onValueChange={(v) => v ? setFilter("curriculum", v as TeacherSearchParams["curriculum"]) : clearFilter("curriculum")}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Any curriculum" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Any curriculum</SelectItem>
-                  {CURRICULA.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {curricula.map((curriculum) => (
+                    <SelectItem key={curriculum.code} value={curriculum.code}>{curriculum.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -148,8 +132,8 @@ export function TeacherSearch() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Any grade</SelectItem>
-                  {GRADES.map((g) => (
-                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                  {gradeLevels.map((grade) => (
+                    <SelectItem key={grade.value} value={grade.value}>{grade.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

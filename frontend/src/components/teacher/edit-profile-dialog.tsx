@@ -9,10 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { apiClient } from "@/lib/api";
+import { useReferenceData } from "@/lib/reference-data";
 import type { ApiError, Curriculum, TeacherProfile } from "@/types";
 import type { AxiosError } from "axios";
-
-const CURRICULA: Curriculum[] = ["CAPS", "Cambridge", "IEB"];
 const PROVINCES = [
   "Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal",
   "Limpopo", "Mpumalanga", "North West", "Northern Cape", "Western Cape",
@@ -26,6 +25,7 @@ interface EditProfileDialogProps {
 }
 
 export function EditProfileDialog({ profile, open, onOpenChange, onSaved }: EditProfileDialogProps) {
+  const { curricula, error: referenceDataError } = useReferenceData();
   const [bio, setBio] = useState(profile.bio ?? "");
   const [headline, setHeadline] = useState(profile.headline ?? "");
   const [yearsExperience, setYearsExperience] = useState(
@@ -143,15 +143,15 @@ export function EditProfileDialog({ profile, open, onOpenChange, onSaved }: Edit
           <div className="space-y-1.5">
             <Label>Curricula</Label>
             <div className="flex gap-3">
-              {CURRICULA.map((c) => (
-                <label key={c} className="flex items-center gap-1.5 cursor-pointer">
+              {curricula.map((curriculumOption) => (
+                <label key={curriculumOption.code} className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={selectedCurricula.has(c)}
-                    onChange={() => toggleCurriculum(c)}
+                    checked={selectedCurricula.has(curriculumOption.code as Curriculum)}
+                    onChange={() => toggleCurriculum(curriculumOption.code as Curriculum)}
                     className="h-4 w-4 rounded border"
                   />
-                  <span className="text-sm">{c}</span>
+                  <span className="text-sm">{curriculumOption.label}</span>
                 </label>
               ))}
             </div>
@@ -174,6 +174,11 @@ export function EditProfileDialog({ profile, open, onOpenChange, onSaved }: Edit
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {!error && referenceDataError && (
+            <Alert>
+              <AlertDescription>{referenceDataError}</AlertDescription>
             </Alert>
           )}
 

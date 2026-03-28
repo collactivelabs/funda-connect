@@ -9,15 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { apiClient } from "@/lib/api";
+import { useReferenceData } from "@/lib/reference-data";
 import type { ApiError, Learner } from "@/types";
 import type { AxiosError } from "axios";
-
-const GRADES = [
-  "Grade R",
-  "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-  "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-];
-const CURRICULA = ["CAPS", "Cambridge", "IEB"];
 
 interface AddLearnerDialogProps {
   open: boolean;
@@ -26,6 +20,7 @@ interface AddLearnerDialogProps {
 }
 
 export function AddLearnerDialog({ open, onOpenChange, onAdded }: AddLearnerDialogProps) {
+  const { curricula, gradeLevels, error: referenceDataError } = useReferenceData();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [grade, setGrade] = useState("");
@@ -104,7 +99,9 @@ export function AddLearnerDialog({ open, onOpenChange, onAdded }: AddLearnerDial
                 <SelectValue placeholder="Select grade" />
               </SelectTrigger>
               <SelectContent>
-                {GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                {gradeLevels.map((gradeOption) => (
+                  <SelectItem key={gradeOption.value} value={gradeOption.value}>{gradeOption.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -116,7 +113,9 @@ export function AddLearnerDialog({ open, onOpenChange, onAdded }: AddLearnerDial
                 <SelectValue placeholder="Select curriculum" />
               </SelectTrigger>
               <SelectContent>
-                {CURRICULA.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {curricula.map((curriculumOption) => (
+                  <SelectItem key={curriculumOption.code} value={curriculumOption.code}>{curriculumOption.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -148,6 +147,11 @@ export function AddLearnerDialog({ open, onOpenChange, onAdded }: AddLearnerDial
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {!error && referenceDataError && (
+            <Alert>
+              <AlertDescription>{referenceDataError}</AlertDescription>
             </Alert>
           )}
 

@@ -56,6 +56,23 @@ export interface NotificationPreferences {
   pushEnabled: boolean;
 }
 
+export interface CurriculumOption {
+  code: Curriculum;
+  label: string;
+  description: string;
+}
+
+export interface GradeLevelOption {
+  value: string;
+  label: string;
+  order: number;
+}
+
+export interface GradeLevelGroup {
+  phase: string;
+  items: GradeLevelOption[];
+}
+
 // ── Teacher ───────────────────────────────────────────────────
 export type VerificationStatus =
   | "pending"

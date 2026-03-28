@@ -9,15 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
+import { useReferenceData } from "@/lib/reference-data";
 import type { ApiError, Subject, TeacherSubject } from "@/types";
 import type { AxiosError } from "axios";
-
-const CURRICULA = ["CAPS", "Cambridge", "IEB"];
-const GRADES = [
-  "Grade R",
-  "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-  "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-];
 
 interface ManageSubjectsDialogProps {
   teacherSubjects: TeacherSubject[];
@@ -32,6 +26,7 @@ export function ManageSubjectsDialog({
   onOpenChange,
   onChanged,
 }: ManageSubjectsDialogProps) {
+  const { curricula, gradeLevels, error: referenceDataError } = useReferenceData();
   const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
   const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [subjectsError, setSubjectsError] = useState<string | null>(null);
@@ -180,7 +175,9 @@ export function ManageSubjectsDialog({
                 <SelectValue placeholder="Select curriculum" />
               </SelectTrigger>
               <SelectContent>
-                {CURRICULA.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {curricula.map((curriculumOption) => (
+                  <SelectItem key={curriculumOption.code} value={curriculumOption.code}>{curriculumOption.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -188,22 +185,27 @@ export function ManageSubjectsDialog({
           <div className="space-y-1.5">
             <Label>Grade levels</Label>
             <div className="flex flex-wrap gap-1.5">
-              {GRADES.map((g) => (
+              {gradeLevels.map((gradeOption) => (
                 <button
-                  key={g}
+                  key={gradeOption.value}
                   type="button"
-                  onClick={() => toggleGrade(g)}
+                  onClick={() => toggleGrade(gradeOption.value)}
                   className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
-                    selectedGrades.has(g)
+                    selectedGrades.has(gradeOption.value)
                       ? "bg-primary text-primary-foreground border-primary"
                       : "border-border hover:bg-muted"
                   }`}
                 >
-                  {g}
+                  {gradeOption.label}
                 </button>
               ))}
             </div>
           </div>
+          {referenceDataError && !addError && (
+            <Alert>
+              <AlertDescription>{referenceDataError}</AlertDescription>
+            </Alert>
+          )}
 
           {addError && (
             <Alert variant="destructive">

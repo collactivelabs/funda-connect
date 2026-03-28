@@ -201,6 +201,8 @@ All endpoints are under `/api/v1/`. Interactive docs at `http://localhost:8000/d
 | `/teachers` | Profile, availability, subjects, documents, search |
 | `/parents` | Profile, learners |
 | `/bookings` | Create, list, get, cancel; PayFast ITN webhook |
+| `/curricula` | Supported curricula reference data |
+| `/grade-levels` | Grade level reference data grouped by phase |
 | `/notifications` | Inbox, unread state, and notification preferences |
 | `/reviews` | Submit review, list by teacher |
 | `/subjects` | Subject catalogue |

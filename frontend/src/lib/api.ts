@@ -2,6 +2,8 @@ import axios, { type AxiosError } from "axios";
 import type {
   ApiError,
   AuthSession,
+  CurriculumOption,
+  GradeLevelGroup,
   NotificationListResponse,
   NotificationPreferences,
   ParentPaymentHistorySummary,
@@ -86,6 +88,10 @@ export const apiClient = {
     resetPassword: (body: unknown) => api.post("/auth/reset-password", body),
     logout: () => api.post("/auth/logout"),
     me: () => api.get("/auth/me"),
+  },
+  referenceData: {
+    listCurricula: () => api.get<CurriculumOption[]>("/curricula"),
+    listGradeLevels: () => api.get<GradeLevelGroup[]>("/grade-levels"),
   },
   notifications: {
     list: () => api.get<NotificationListResponse>("/notifications"),
