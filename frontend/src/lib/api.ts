@@ -13,6 +13,7 @@ import type {
   NotificationPreferences,
   ParentPaymentHistorySummary,
   ParentPaymentReceipt,
+  TopicReference,
 } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -121,6 +122,13 @@ export const apiClient = {
   referenceData: {
     listCurricula: () => api.get<CurriculumOption[]>("/curricula"),
     listGradeLevels: () => api.get<GradeLevelGroup[]>("/grade-levels"),
+    listTopics: (params?: {
+      subject?: string;
+      grade?: string;
+      curriculum?: string;
+      term?: number;
+      q?: string;
+    }) => api.get<TopicReference[]>("/topics", { params }),
   },
   notifications: {
     list: () => api.get<NotificationListResponse>("/notifications"),

@@ -106,6 +106,17 @@ export interface GradeLevelGroup {
   items: GradeLevelOption[];
 }
 
+export interface TopicReference {
+  id: string;
+  subject: string;
+  subjectName: string;
+  grade: string;
+  curriculum: Curriculum;
+  term?: number | null;
+  name: string;
+  referenceCode?: string | null;
+}
+
 // ── Teacher ───────────────────────────────────────────────────
 export type VerificationStatus =
   | "pending"
@@ -320,10 +331,14 @@ export interface AvailabilitySlot {
 
 // ── Search / Filter ───────────────────────────────────────────
 export interface TeacherSearchParams {
+  q?: string;
   subject?: string;
   curriculum?: Curriculum;
   grade?: string;
   minRate?: number;
   maxRate?: number;
+  minRating?: number;
   province?: string;
+  sortBy?: "rating_average" | "hourly_rate_cents" | "total_lessons" | "created_at";
+  sortOrder?: "asc" | "desc";
 }

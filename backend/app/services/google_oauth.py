@@ -21,6 +21,7 @@ _GOOGLE_OAUTH_STATE_PREFIX = "google_oauth_state"
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+_MAX_AVATAR_URL_LENGTH = 2048
 
 
 class GoogleOAuthFlowError(ValueError):
@@ -161,6 +162,17 @@ def google_profile_name_parts(profile: GoogleOAuthProfile) -> tuple[str, str]:
     return _fallback_name_from_email(profile.email)
 
 
+def normalize_avatar_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    cleaned = url.strip()
+    if not cleaned:
+        return None
+    if len(cleaned) > _MAX_AVATAR_URL_LENGTH:
+        return None
+    return cleaned
+
+
 async def _find_user_by_email(db: AsyncSession, email: str) -> User | None:
     return await db.scalar(select(User).where(User.email == email))
 
@@ -183,8 +195,9 @@ async def resolve_google_oauth_user(
             raise GoogleOAuthFlowError("already_registered")
         if not user.email_verified:
             user.email_verified = True
-        if not user.avatar_url and profile.picture:
-            user.avatar_url = profile.picture
+        picture_url = normalize_avatar_url(profile.picture)
+        if not user.avatar_url and picture_url:
+            user.avatar_url = picture_url
         await db.flush()
         return user
 
@@ -200,7 +213,7 @@ async def resolve_google_oauth_user(
         first_name=first_name,
         last_name=last_name,
         role=oauth_state.role,
-        avatar_url=profile.picture,
+        avatar_url=normalize_avatar_url(profile.picture),
         email_verified=True,
     )
     db.add(user)

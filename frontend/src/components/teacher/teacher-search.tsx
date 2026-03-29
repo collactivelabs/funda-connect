@@ -18,6 +18,14 @@ const PROVINCES = [
   "Limpopo", "Mpumalanga", "North West", "Northern Cape", "Western Cape",
 ];
 
+const SORT_OPTIONS = [
+  { value: "rating_average:desc", label: "Top rated" },
+  { value: "hourly_rate_cents:asc", label: "Price: low to high" },
+  { value: "hourly_rate_cents:desc", label: "Price: high to low" },
+  { value: "total_lessons:desc", label: "Most lessons taught" },
+  { value: "created_at:desc", label: "Newest profiles" },
+] as const;
+
 function ResultsSkeleton() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -44,14 +52,17 @@ export function TeacherSearch() {
   }, []);
 
   useEffect(() => {
-    setLoading(true);
     const params: Record<string, string> = {};
     if (filters.subject) params.subject = filters.subject;
+    if (filters.q) params.q = filters.q;
     if (filters.curriculum) params.curriculum = filters.curriculum;
     if (filters.grade) params.grade = filters.grade;
     if (filters.province) params.province = filters.province;
     if (filters.minRate != null) params.min_rate = String(filters.minRate * 100);
     if (filters.maxRate != null) params.max_rate = String(filters.maxRate * 100);
+    if (filters.minRating != null) params.min_rating = String(filters.minRating);
+    if (filters.sortBy) params.sort_by = filters.sortBy;
+    if (filters.sortOrder) params.sort_order = filters.sortOrder;
 
     apiClient.teachers.search(params)
       .then(({ data }) => setTeachers(data as TeacherProfile[]))
@@ -60,10 +71,12 @@ export function TeacherSearch() {
   }, [filters]);
 
   function setFilter<K extends keyof TeacherSearchParams>(key: K, value: TeacherSearchParams[K]) {
+    setLoading(true);
     startTransition(() => setFilters((prev) => ({ ...prev, [key]: value })));
   }
 
   function clearFilter<K extends keyof TeacherSearchParams>(key: K) {
+    setLoading(true);
     startTransition(() =>
       setFilters((prev) => {
         const next = { ...prev };
@@ -73,7 +86,9 @@ export function TeacherSearch() {
     );
   }
 
-  const activeFilters = Object.entries(filters).filter(([, v]) => v !== undefined);
+  const activeFilters = Object.entries(filters).filter(
+    ([key, value]) => value !== undefined && key !== "sortBy" && key !== "sortOrder"
+  );
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
@@ -170,7 +185,11 @@ export function TeacherSearch() {
                   value={filters.minRate ?? ""}
                   onChange={(e) => {
                     const v = e.target.value ? Number(e.target.value) : undefined;
-                    v !== undefined ? setFilter("minRate", v) : clearFilter("minRate");
+                    if (v !== undefined) {
+                      setFilter("minRate", v);
+                    } else {
+                      clearFilter("minRate");
+                    }
                   }}
                 />
                 <Input
@@ -181,7 +200,11 @@ export function TeacherSearch() {
                   value={filters.maxRate ?? ""}
                   onChange={(e) => {
                     const v = e.target.value ? Number(e.target.value) : undefined;
-                    v !== undefined ? setFilter("maxRate", v) : clearFilter("maxRate");
+                    if (v !== undefined) {
+                      setFilter("maxRate", v);
+                    } else {
+                      clearFilter("maxRate");
+                    }
                   }}
                 />
               </div>
@@ -192,7 +215,10 @@ export function TeacherSearch() {
                 variant="ghost"
                 size="sm"
                 className="w-full"
-                onClick={() => setFilters({})}
+                onClick={() => {
+                  setLoading(true);
+                  setFilters({});
+                }}
               >
                 Clear all filters
               </Button>
@@ -205,6 +231,52 @@ export function TeacherSearch() {
 
       {/* Results */}
       <div className="flex-1 min-w-0">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-1.5 sm:max-w-sm">
+            <Label htmlFor="teacherSearchQuery">Search teachers</Label>
+            <Input
+              id="teacherSearchQuery"
+              placeholder="Search by teacher name, bio, or subject"
+              value={filters.q ?? ""}
+              onChange={(e) => {
+                const value = e.target.value.trimStart();
+                if (value) {
+                  setFilter("q", value);
+                } else {
+                  clearFilter("q");
+                }
+              }}
+            />
+          </div>
+
+          <div className="space-y-1.5 sm:w-56">
+            <Label>Sort by</Label>
+            <Select
+              value={filters.sortBy ? `${filters.sortBy}:${filters.sortOrder ?? "desc"}` : ""}
+              onValueChange={(value) => {
+                if (!value) {
+                  clearFilter("sortBy");
+                  clearFilter("sortOrder");
+                  return;
+                }
+                const [sortBy, sortOrder] = value.split(":") as [TeacherSearchParams["sortBy"], TeacherSearchParams["sortOrder"]];
+                setFilter("sortBy", sortBy);
+                setFilter("sortOrder", sortOrder);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Recommended" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Recommended</SelectItem>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         {/* Active filter chips */}
         {activeFilters.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-4">
@@ -227,7 +299,15 @@ export function TeacherSearch() {
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <p className="text-muted-foreground">No teachers found matching your filters.</p>
             {activeFilters.length > 0 && (
-              <Button variant="link" onClick={() => setFilters({})}>Clear filters</Button>
+              <Button
+                variant="link"
+                onClick={() => {
+                  setLoading(true);
+                  setFilters({});
+                }}
+              >
+                Clear filters
+              </Button>
             )}
           </div>
         ) : (

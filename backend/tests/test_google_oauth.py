@@ -15,6 +15,7 @@ from app.services.google_oauth import (
     build_google_authorization_url,
     consume_google_oauth_state,
     issue_google_oauth_state,
+    normalize_avatar_url,
     resolve_google_oauth_user,
 )
 
@@ -129,6 +130,11 @@ def test_build_google_authorization_url_uses_configured_callback(monkeypatch):
     assert "redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fapi%2Fv1%2Fauth%2Fgoogle%2Fcallback" in url
     assert "scope=openid+email+profile" in url
     assert "state=state-token" in url
+
+
+def test_normalize_avatar_url_rejects_overly_long_values():
+    assert normalize_avatar_url(" https://example.com/avatar.png ") == "https://example.com/avatar.png"
+    assert normalize_avatar_url("x" * 2049) is None
 
 
 @pytest.mark.asyncio

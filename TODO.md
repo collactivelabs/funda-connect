@@ -65,7 +65,7 @@ This file tracks outstanding work identified by comparing the original technical
 ## 7. Search And Reference Data
 
 - [x] Add reference-data endpoints for grade levels and curricula.
-- [ ] Add a topics endpoint if topics remain part of the API contract.
+- [x] Add a topics endpoint if topics remain part of the API contract.
 - [ ] Decide whether teacher search should move to Meilisearch or stay database-backed.
 - [ ] Align the public search/filter contract with what the API actually supports.
 

@@ -6,7 +6,7 @@ from uuid import UUID
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,7 @@ from app.models.booking import AvailabilitySlot, Booking
 from app.models.curriculum import Subject
 from app.models.payment import Payout, VerificationDocument
 from app.models.teacher import TeacherProfile, TeacherSubject
+from app.models.user import User
 from app.schemas.booking import (
     AvailabilitySlotResponse,
     BookableSlotResponse,
@@ -109,7 +110,11 @@ async def list_teachers(
     grade: str | None = None,
     min_rate: int | None = None,
     max_rate: int | None = None,
+    min_rating: float | None = None,
     province: str | None = None,
+    q: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
     db: AsyncSession = Depends(get_db),
 ):
     """Search and filter verified, listed teachers."""
@@ -125,18 +130,58 @@ async def list_teachers(
         query = query.where(TeacherProfile.hourly_rate_cents >= min_rate)
     if max_rate is not None:
         query = query.where(TeacherProfile.hourly_rate_cents <= max_rate)
+    if min_rating is not None:
+        query = query.where(TeacherProfile.average_rating >= min_rating)
     if province:
         query = query.where(TeacherProfile.province == province)
     if curriculum:
         query = query.where(TeacherProfile.curricula.contains([curriculum]))
     if subject:
-        query = query.join(TeacherProfile.subjects).join(TeacherSubject.subject).where(
-            Subject.slug == subject
+        query = query.where(
+            TeacherProfile.subjects.any(
+                TeacherSubject.subject.has(Subject.slug == subject)
+            )
         )
     if grade:
-        query = query.join(TeacherProfile.subjects, isouter=not bool(subject)).where(
-            TeacherSubject.grade_levels.contains([grade])
+        query = query.where(
+            TeacherProfile.subjects.any(
+                TeacherSubject.grade_levels.contains([grade])
+            )
         )
+    if q:
+        term = f"%{q.strip()}%"
+        if term != "%%":
+            query = query.where(
+                or_(
+                    TeacherProfile.headline.ilike(term),
+                    TeacherProfile.bio.ilike(term),
+                    TeacherProfile.user.has(
+                        or_(
+                            User.first_name.ilike(term),
+                            User.last_name.ilike(term),
+                        )
+                    ),
+                    TeacherProfile.subjects.any(
+                        TeacherSubject.subject.has(
+                            or_(
+                                Subject.name.ilike(term),
+                                Subject.slug.ilike(term),
+                            )
+                        )
+                    ),
+                )
+            )
+
+    sort_columns = {
+        "rating_average": TeacherProfile.average_rating,
+        "hourly_rate_cents": TeacherProfile.hourly_rate_cents,
+        "total_lessons": TeacherProfile.total_lessons,
+        "created_at": TeacherProfile.created_at,
+    }
+    sort_column = sort_columns.get(sort_by or "")
+    if sort_column is not None:
+        direction = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+        query = query.order_by(TeacherProfile.is_premium.desc(), direction, TeacherProfile.created_at.desc())
 
     result = await db.scalars(query)
     return [_teacher_response(p) for p in result.unique().all()]

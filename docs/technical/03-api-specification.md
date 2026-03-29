@@ -154,10 +154,8 @@ Browse and search teachers. **Public endpoint** (no auth required).
 | `curriculum` | string | Filter by curriculum code (`CAPS`, `CAMB`, `IEB`) |
 | `min_rate` | int | Minimum hourly rate in cents |
 | `max_rate` | int | Maximum hourly rate in cents |
-| `language` | string | Filter by teaching language |
-| `province` | string | Filter by province |
 | `min_rating` | float | Minimum average rating |
-| `trial_free` | bool | Only teachers offering free trials |
+| `province` | string | Filter by province |
 | `q` | string | Full-text search (name, bio, subjects) |
 | `sort_by` | string | `rating_average`, `hourly_rate_cents`, `total_lessons`, `created_at` |
 | `sort_order` | string | `asc` or `desc` |
@@ -424,7 +422,7 @@ List all grade levels grouped by phase.
 List supported curricula.
 
 ### `GET /topics`
-List topics filtered by subject, grade, curriculum, and term.
+List topics filtered by subject, grade, curriculum, term, and free-text query. Current implementation serves curated reference data rather than a database-managed topic catalogue.
 
 ---
 
