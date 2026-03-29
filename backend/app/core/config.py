@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     # Booking / scheduling
     BOOKING_HOLD_MINUTES: int = 15
     BOOKING_MIN_LEAD_MINUTES: int = 60
+    BOOKING_NO_SHOW_GRACE_MINUTES: int = 15
     BOOKABLE_SLOT_DAYS: int = 21
 
     @property

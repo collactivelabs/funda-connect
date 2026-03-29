@@ -62,7 +62,7 @@
 - Default: `page=1`, `per_page=20`, max `per_page=100`
 
 ### Filtering & Sorting
-- Filters: `?subject=mathematics&grade=GR12&curriculum=CAPS&min_rate=15000&max_rate=40000`
+- Filters: `?subject=mathematics&grade=Grade%2012&curriculum=CAPS&min_rate=15000&max_rate=40000&min_rating=4.0&province=Gauteng&q=algebra`
 - Sorting: `?sort_by=rating_average&sort_order=desc`
 
 ---
@@ -346,6 +346,16 @@ Mark a lesson as completed and add notes.
 {
   "lesson_notes": "Covered quadratic formula and discriminant. Thabo grasped the concepts well.",
   "topics_covered": ["topic-uuid-1", "topic-uuid-2"]
+}
+```
+
+### `POST /bookings/{id}/report-no-show` 🔒 Parent | Teacher
+Report that the other party has still not joined the lesson after the grace window.
+
+**Request:**
+```json
+{
+  "reason": "Teacher did not join the room after 15 minutes."
 }
 ```
 

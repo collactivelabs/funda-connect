@@ -55,6 +55,15 @@ export const useAuthStore = create<AuthState>()(
         if (state?.token) {
           setApiToken(state.token);
         }
+
+        if (typeof window !== "undefined") {
+          const handleAuthCleared = () => {
+            setApiToken(null);
+            useAuthStore.setState({ user: null, token: null, isLoading: false });
+          };
+
+          window.addEventListener("funda-auth-cleared", handleAuthCleared);
+        }
       },
     }
   )

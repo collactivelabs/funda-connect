@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.services.refunds import (
     calculate_cancellation_outcome,
+    calculate_no_show_outcome,
     payment_status_after_refund,
 )
 
@@ -78,3 +79,31 @@ def test_payment_status_after_refund_handles_partial_and_full() -> None:
     assert payment_status_after_refund(35_000, 0) == "complete"
     assert payment_status_after_refund(35_000, 17_500) == "partially_refunded"
     assert payment_status_after_refund(35_000, 35_000) == "refunded"
+
+
+def test_teacher_reporting_parent_no_show_keeps_full_payout() -> None:
+    outcome = calculate_no_show_outcome(
+        reported_by_role="teacher",
+        amount_cents=35_000,
+        original_teacher_payout_cents=28_000,
+        original_commission_cents=7_000,
+    )
+
+    assert outcome.refund_amount_cents == 0
+    assert outcome.teacher_payout_cents == 28_000
+    assert outcome.commission_cents == 7_000
+    assert outcome.policy_code == "parent_no_show_no_refund"
+
+
+def test_parent_reporting_teacher_no_show_gets_full_refund() -> None:
+    outcome = calculate_no_show_outcome(
+        reported_by_role="parent",
+        amount_cents=35_000,
+        original_teacher_payout_cents=28_000,
+        original_commission_cents=7_000,
+    )
+
+    assert outcome.refund_amount_cents == 35_000
+    assert outcome.teacher_payout_cents == 0
+    assert outcome.commission_cents == 0
+    assert outcome.policy_code == "teacher_no_show_full_refund"

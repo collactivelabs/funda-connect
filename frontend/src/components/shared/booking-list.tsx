@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LeaveReviewDialog } from "@/components/parent/leave-review-dialog";
 import { CompleteLessonDialog } from "@/components/shared/complete-lesson-dialog";
 import { RaiseDisputeDialog } from "@/components/shared/raise-dispute-dialog";
+import { ReportNoShowDialog } from "@/components/shared/report-no-show-dialog";
 import { RescheduleBookingDialog } from "@/components/shared/reschedule-booking-dialog";
 import { apiClient } from "@/lib/api";
 import type { Booking, BookingStatus } from "@/types";
@@ -17,6 +18,8 @@ const STATUS_CONFIG: Record<BookingStatus, { label: string; variant: "default" |
   confirmed: { label: "Confirmed", variant: "default" },
   in_progress: { label: "In progress", variant: "default" },
   completed: { label: "Completed", variant: "outline" },
+  no_show_parent: { label: "Parent no-show", variant: "destructive" },
+  no_show_teacher: { label: "Teacher no-show", variant: "destructive" },
   disputed: { label: "Disputed", variant: "destructive" },
   cancelled: { label: "Cancelled", variant: "destructive" },
   expired: { label: "Payment expired", variant: "destructive" },
@@ -102,7 +105,14 @@ export function BookingList({ role }: Props) {
     );
   }
 
-  const terminalStatuses = new Set<BookingStatus>(["completed", "reviewed", "cancelled", "expired"]);
+  const terminalStatuses = new Set<BookingStatus>([
+    "completed",
+    "reviewed",
+    "cancelled",
+    "expired",
+    "no_show_parent",
+    "no_show_teacher",
+  ]);
   const upcoming = bookings.filter(
     (booking) => {
       const lessonEnd = new Date(new Date(booking.scheduledAt).getTime() + booking.durationMinutes * 60_000);
@@ -160,7 +170,6 @@ function BookingRow({
   onSeriesCancelled: (ids: string[]) => void;
 }) {
   const [acting, setActing] = useState(false);
-  const statusCfg = STATUS_CONFIG[booking.status];
   const subjectName = booking.subject?.name;
   const learnerName = booking.learner
     ? `${booking.learner.firstName} ${booking.learner.lastName}`
@@ -168,15 +177,25 @@ function BookingRow({
 
   const lessonStart = new Date(booking.scheduledAt);
   const lessonEnd = new Date(lessonStart.getTime() + booking.durationMinutes * 60_000);
+  const noShowGraceAt = new Date(lessonStart.getTime() + 15 * 60_000);
+  const effectiveStatus: BookingStatus =
+    booking.status === "confirmed" && now >= lessonStart && now <= lessonEnd
+      ? "in_progress"
+      : booking.status;
+  const statusCfg = STATUS_CONFIG[effectiveStatus];
   // Show join button from 10 min before start until lesson end
   const joinWindowOpen = new Date(lessonStart.getTime() - 10 * 60_000) <= now && now <= lessonEnd;
-  const canJoin = booking.videoRoomUrl && joinWindowOpen && booking.status === "confirmed";
-  const canMarkComplete = role === "teacher" && booking.status === "confirmed" && now >= lessonStart;
+  const canJoin = booking.videoRoomUrl && joinWindowOpen && ["confirmed", "in_progress"].includes(booking.status);
+  const canMarkComplete = role === "teacher" && ["confirmed", "in_progress"].includes(booking.status) && now >= lessonStart;
   const canReview = role === "parent" && booking.status === "completed";
   const canReschedule =
     (role === "parent" || role === "teacher") &&
     booking.status === "confirmed" &&
     now < lessonStart;
+  const canReportNoShow =
+    (role === "parent" || role === "teacher") &&
+    ["confirmed", "in_progress"].includes(booking.status) &&
+    now >= noShowGraceAt;
   const canRaiseDispute =
     (role === "parent" || role === "teacher") &&
     now >= lessonStart &&
@@ -204,6 +223,11 @@ function BookingRow({
               {booking.lessonNotes}
             </p>
           )}
+          {booking.noShowReason && (
+            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+              No-show note: {booking.noShowReason}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
           {canJoin && (
@@ -216,7 +240,7 @@ function BookingRow({
               Join lesson
             </a>
           )}
-          {!canJoin && booking.videoRoomUrl && booking.status === "confirmed" && (
+          {!canJoin && booking.videoRoomUrl && ["confirmed", "in_progress"].includes(booking.status) && (
             <a
               href={booking.videoRoomUrl}
               target="_blank"
@@ -236,6 +260,13 @@ function BookingRow({
             <RescheduleBookingDialog
               booking={booking}
               onRescheduled={(patch) => onUpdated(booking.id, patch)}
+            />
+          )}
+          {canReportNoShow && role && (
+            <ReportNoShowDialog
+              booking={booking}
+              role={role}
+              onReported={(nextBooking) => onUpdated(booking.id, nextBooking)}
             />
           )}
           {canRaiseDispute && (

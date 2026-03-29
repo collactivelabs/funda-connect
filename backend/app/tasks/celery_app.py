@@ -29,6 +29,11 @@ celery_app.conf.update(
             "task": "app.tasks.lessons.expire_pending_booking_holds",
             "schedule": 60,
         },
+        # Move due lessons into an in-progress state so attendance actions are available.
+        "start-due-lessons": {
+            "task": "app.tasks.lessons.start_due_lessons",
+            "schedule": 60,
+        },
         # Mark completed lessons and create payout records every 15 minutes
         "auto-complete-lessons": {
             "task": "app.tasks.lessons.auto_complete_lessons",

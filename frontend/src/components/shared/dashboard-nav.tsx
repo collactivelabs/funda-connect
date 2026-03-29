@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NotificationCenter } from "@/components/shared/notification-center";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants, Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth.store";
 
 export function DashboardNav() {
   const router = useRouter();
-  const { user, logout } = useAuthStore();
+  const { user, token, logout } = useAuthStore();
 
   async function handleLogout() {
     await logout();
@@ -68,9 +68,15 @@ export function DashboardNav() {
               </Badge>
             </>
           )}
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
-            Sign out
-          </Button>
+          {user && token ? (
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
+              Sign out
+            </Button>
+          ) : (
+            <Link href="/login" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              Sign in
+            </Link>
+          )}
         </div>
       </div>
     </header>

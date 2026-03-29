@@ -84,3 +84,29 @@ def calculate_booking_cancellation_outcome(
         scheduled_at=booking.scheduled_at,
         cancelled_at=cancelled_at,
     )
+
+
+def calculate_no_show_outcome(
+    *,
+    reported_by_role: str,
+    amount_cents: int,
+    original_teacher_payout_cents: int,
+    original_commission_cents: int,
+) -> CancellationOutcome:
+    if reported_by_role == "teacher":
+        return CancellationOutcome(
+            refund_amount_cents=0,
+            teacher_payout_cents=original_teacher_payout_cents,
+            commission_cents=original_commission_cents,
+            policy_code="parent_no_show_no_refund",
+        )
+
+    if reported_by_role == "parent":
+        return CancellationOutcome(
+            refund_amount_cents=amount_cents,
+            teacher_payout_cents=0,
+            commission_cents=0,
+            policy_code="teacher_no_show_full_refund",
+        )
+
+    raise ValueError("reported_by_role must be parent or teacher")

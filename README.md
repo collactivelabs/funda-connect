@@ -156,6 +156,7 @@ MEILISEARCH_MASTER_KEY=
 
 # Platform
 PLATFORM_COMMISSION_RATE=0.175     # 17.5%
+BOOKING_NO_SHOW_GRACE_MINUTES=15   # no-show reporting window after lesson start
 ALLOWED_ORIGINS=http://localhost:3001
 ```
 

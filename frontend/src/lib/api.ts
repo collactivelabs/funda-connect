@@ -47,6 +47,8 @@ const authApi = axios.create({
   withCredentials: true,
 });
 
+const AUTH_STORAGE_KEY = "funda-auth";
+
 // Transform all response data from snake_case to camelCase
 api.interceptors.response.use((res) => {
   if (res.data) res.data = transformKeys(res.data);
@@ -60,9 +62,87 @@ authApi.interceptors.response.use((res) => {
 
 // Attach access token from memory on every request
 let accessToken: string | null = null;
+let refreshPromise: Promise<string> | null = null;
+let redirectingToLogin = false;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+}
+
+function syncPersistedAuthToken(token: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) {
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      state?: { token?: string | null; user?: unknown | null };
+      version?: number;
+    };
+    const next = {
+      ...parsed,
+      state: {
+        ...parsed.state,
+        token,
+      },
+    };
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+}
+
+function clearPersistedAuth() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+function clearLiveAuthState() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  clearPersistedAuth();
+  window.dispatchEvent(new CustomEvent("funda-auth-cleared"));
+}
+
+function redirectToLogin() {
+  if (typeof window === "undefined" || redirectingToLogin) {
+    return;
+  }
+
+  redirectingToLogin = true;
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  const target =
+    currentPath && currentPath !== "/login"
+      ? `/login?redirect=${encodeURIComponent(currentPath)}`
+      : "/login";
+  window.location.assign(target);
+}
+
+async function refreshAccessToken(): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = authApi
+      .post<AuthResponse>("/auth/refresh")
+      .then(({ data }) => {
+        setAccessToken(data.accessToken);
+        syncPersistedAuthToken(data.accessToken);
+        redirectingToLogin = false;
+        return data.accessToken;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
 }
 
 api.interceptors.request.use((config) => {
@@ -77,16 +157,19 @@ api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError<ApiError>) => {
     const original = error.config as typeof error.config & { _retry?: boolean };
-    if (error.response?.status === 401 && !original._retry) {
+    const requestUrl = original?.url ?? "";
+
+    if (error.response?.status === 401 && original && !original._retry && requestUrl !== "/auth/refresh") {
       original._retry = true;
       try {
-        const { data } = await api.post<{ accessToken: string }>("/auth/refresh");
-        setAccessToken(data.accessToken);
-        original.headers!.Authorization = `Bearer ${data.accessToken}`;
+        const token = await refreshAccessToken();
+        original.headers = original.headers ?? {};
+        original.headers.Authorization = `Bearer ${token}`;
         return api(original);
       } catch {
         setAccessToken(null);
-        window.location.href = "/login";
+        clearLiveAuthState();
+        redirectToLogin();
       }
     }
     return Promise.reject(error);
@@ -196,6 +279,8 @@ export const apiClient = {
       api.post(`/bookings/${id}/reschedule`, body),
     raiseDispute: (id: string, body: { reason: string }) =>
       api.post(`/bookings/${id}/dispute`, body),
+    reportNoShow: (id: string, body: { reason?: string | null }) =>
+      api.post(`/bookings/${id}/report-no-show`, body),
     complete: (id: string, body: { lessonNotes?: string | null; topicsCovered: string[] }) =>
       api.post(`/bookings/${id}/complete`, {
         lesson_notes: body.lessonNotes,

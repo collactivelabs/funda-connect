@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,52 @@ const SORT_OPTIONS = [
   { value: "created_at:desc", label: "Newest profiles" },
 ] as const;
 
+const RATING_OPTIONS = [
+  { value: 4.5, label: "4.5 stars and up" },
+  { value: 4, label: "4 stars and up" },
+  { value: 3.5, label: "3.5 stars and up" },
+] as const;
+
+function parseFilters(searchParams: { get(name: string): string | null }): TeacherSearchParams {
+  const minRate = searchParams.get("min_rate");
+  const maxRate = searchParams.get("max_rate");
+  const minRating = searchParams.get("min_rating");
+
+  return {
+    q: searchParams.get("q") || undefined,
+    subject: searchParams.get("subject") || undefined,
+    curriculum: (searchParams.get("curriculum") as TeacherSearchParams["curriculum"] | null) || undefined,
+    grade: searchParams.get("grade") || undefined,
+    province: searchParams.get("province") || undefined,
+    minRate: minRate ? Number(minRate) : undefined,
+    maxRate: maxRate ? Number(maxRate) : undefined,
+    minRating: minRating ? Number(minRating) : undefined,
+    sortBy: (searchParams.get("sort_by") as TeacherSearchParams["sortBy"] | null) || undefined,
+    sortOrder: (searchParams.get("sort_order") as TeacherSearchParams["sortOrder"] | null) || undefined,
+  };
+}
+
+function buildFilterParams(filters: TeacherSearchParams): URLSearchParams {
+  const params = new URLSearchParams();
+
+  if (filters.subject) params.set("subject", filters.subject);
+  if (filters.q) params.set("q", filters.q);
+  if (filters.curriculum) params.set("curriculum", filters.curriculum);
+  if (filters.grade) params.set("grade", filters.grade);
+  if (filters.province) params.set("province", filters.province);
+  if (filters.minRate != null) params.set("min_rate", String(filters.minRate));
+  if (filters.maxRate != null) params.set("max_rate", String(filters.maxRate));
+  if (filters.minRating != null) params.set("min_rating", String(filters.minRating));
+  if (filters.sortBy) params.set("sort_by", filters.sortBy);
+  if (filters.sortOrder) params.set("sort_order", filters.sortOrder);
+
+  return params;
+}
+
+function parseFiltersFromString(search: string): TeacherSearchParams {
+  return parseFilters(new URLSearchParams(search));
+}
+
 function ResultsSkeleton() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -37,13 +84,16 @@ function ResultsSkeleton() {
 }
 
 export function TeacherSearch() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
   const { curricula, gradeLevels } = useReferenceData();
-
-  const [filters, setFilters] = useState<TeacherSearchParams>({});
+  const searchParamKey = searchParams.toString();
+  const filters = useMemo(() => parseFiltersFromString(searchParamKey), [searchParamKey]);
 
   useEffect(() => {
     apiClient.subjects.list()
@@ -70,25 +120,50 @@ export function TeacherSearch() {
       .finally(() => setLoading(false));
   }, [filters]);
 
-  function setFilter<K extends keyof TeacherSearchParams>(key: K, value: TeacherSearchParams[K]) {
+  function replaceFilters(nextFilters: TeacherSearchParams) {
     setLoading(true);
-    startTransition(() => setFilters((prev) => ({ ...prev, [key]: value })));
+    startTransition(() => {
+      const next = buildFilterParams(nextFilters).toString();
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    });
+  }
+
+  function setFilter<K extends keyof TeacherSearchParams>(key: K, value: TeacherSearchParams[K]) {
+    replaceFilters({ ...filters, [key]: value });
   }
 
   function clearFilter<K extends keyof TeacherSearchParams>(key: K) {
-    setLoading(true);
-    startTransition(() =>
-      setFilters((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      })
-    );
+    const next = { ...filters };
+    delete next[key];
+    replaceFilters(next);
   }
 
   const activeFilters = Object.entries(filters).filter(
     ([key, value]) => value !== undefined && key !== "sortBy" && key !== "sortOrder"
   );
+
+  function getFilterLabel(key: string, value: string | number) {
+    switch (key) {
+      case "q":
+        return `Search: ${value}`;
+      case "subject":
+        return `Subject: ${subjects.find((subject) => subject.slug === value)?.name ?? value}`;
+      case "curriculum":
+        return `Curriculum: ${curricula.find((item) => item.code === value)?.label ?? value}`;
+      case "grade":
+        return `Grade: ${value}`;
+      case "province":
+        return `Province: ${value}`;
+      case "minRate":
+        return `Min rate: R${value}`;
+      case "maxRate":
+        return `Max rate: R${value}`;
+      case "minRating":
+        return `Rating: ${value}+`;
+      default:
+        return String(value);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
@@ -210,15 +285,32 @@ export function TeacherSearch() {
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <Label>Minimum rating</Label>
+              <Select
+                value={filters.minRating != null ? String(filters.minRating) : ""}
+                onValueChange={(value) => value ? setFilter("minRating", Number(value)) : clearFilter("minRating")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Any rating" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Any rating</SelectItem>
+                  {RATING_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={String(option.value)}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {activeFilters.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="w-full"
-                onClick={() => {
-                  setLoading(true);
-                  setFilters({});
-                }}
+                onClick={() => replaceFilters({})}
               >
                 Clear all filters
               </Button>
@@ -287,7 +379,7 @@ export function TeacherSearch() {
                 className="cursor-pointer"
                 onClick={() => clearFilter(key as keyof TeacherSearchParams)}
               >
-                {String(value)} ×
+                {getFilterLabel(key, value as string | number)} ×
               </Badge>
             ))}
           </div>
@@ -301,10 +393,7 @@ export function TeacherSearch() {
             {activeFilters.length > 0 && (
               <Button
                 variant="link"
-                onClick={() => {
-                  setLoading(true);
-                  setFilters({});
-                }}
+                onClick={() => replaceFilters({})}
               >
                 Clear filters
               </Button>

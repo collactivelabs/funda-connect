@@ -88,10 +88,12 @@ def test_booking_blocks_time_only_while_pending_hold_is_active():
     hold_expires_at = datetime(2026, 3, 30, 8, 0, tzinfo=UTC)
     pending_booking = SimpleNamespace(status="pending_payment", hold_expires_at=hold_expires_at)
     confirmed_booking = SimpleNamespace(status="confirmed", hold_expires_at=None)
+    no_show_booking = SimpleNamespace(status="no_show_teacher", hold_expires_at=None)
 
     assert booking_blocks_time(pending_booking, datetime(2026, 3, 30, 7, 45, tzinfo=UTC))
     assert not booking_blocks_time(pending_booking, datetime(2026, 3, 30, 8, 1, tzinfo=UTC))
     assert booking_blocks_time(confirmed_booking, datetime(2026, 3, 30, 8, 1, tzinfo=UTC))
+    assert not booking_blocks_time(no_show_booking, datetime(2026, 3, 30, 8, 1, tzinfo=UTC))
 
 
 def test_slot_conflicts_with_bookings_ignores_expired_pending_holds():

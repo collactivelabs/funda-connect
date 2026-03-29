@@ -50,6 +50,7 @@ class Booking(UUIDMixin, TimestampMixin, Base):
 
     # State machine: pending_payment → confirmed → in_progress → completed → reviewed
     # pending_payment can also lapse into expired if the payment hold times out.
+    # Live lessons can also be resolved as no_show_parent or no_show_teacher.
     status: Mapped[str] = mapped_column(String(30), default="pending_payment", index=True)
 
     # Pricing (ZAR in cents)
@@ -67,6 +68,11 @@ class Booking(UUIDMixin, TimestampMixin, Base):
     parent_notes: Mapped[str | None] = mapped_column(Text)
     lesson_notes: Mapped[str | None] = mapped_column(Text)
     topics_covered: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    no_show_reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    no_show_reported_by_role: Mapped[str | None] = mapped_column(String(20))
+    no_show_reason: Mapped[str | None] = mapped_column(Text)
     cancellation_reason: Mapped[str | None] = mapped_column(Text)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_by_role: Mapped[str | None] = mapped_column(String(20))

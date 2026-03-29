@@ -185,7 +185,7 @@ def generate_booking_number(date: date) -> str:
     │cancelled_by_parent  │    │cancelled_by_teacher  │
     └─────────────────────┘    └──────────────────────┘
 
-    ─── No-show (auto-detected 15min after start) ───
+    ─── No-show (reported after 15min grace window) ───
 
     ┌────────────────┐    ┌──────────────────┐
     │no_show_parent  │    │no_show_teacher   │

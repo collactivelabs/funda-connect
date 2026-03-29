@@ -51,7 +51,7 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Add learner progress tracking.
 - [x] Add learner report export.
 - [x] Persist and surface lesson notes and covered topics on completed lessons.
-- [ ] Decide whether attendance/no-show tracking still needs a first-class workflow.
+- [x] Add a first-class attendance/no-show workflow for live lessons.
 - [ ] Decide whether blocked dates and calendar sync are still needed for scheduling.
 
 ## 6. Notifications
@@ -68,7 +68,7 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Add reference-data endpoints for grade levels and curricula.
 - [x] Add a topics endpoint if topics remain part of the API contract.
 - [ ] Decide whether teacher search should move to Meilisearch or stay database-backed.
-- [ ] Align the public search/filter contract with what the API actually supports.
+- [x] Align the public search/filter contract with what the API actually supports.
 
 ## 8. Security And Compliance
 

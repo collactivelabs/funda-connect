@@ -1,6 +1,6 @@
 import hashlib
 import urllib.parse
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 from uuid import UUID
 
@@ -31,7 +31,10 @@ from app.services.rate_limits import (
     enforce_rate_limit,
 )
 from app.services.reference_data import list_topics
-from app.services.refunds import calculate_booking_cancellation_outcome
+from app.services.refunds import (
+    calculate_booking_cancellation_outcome,
+    calculate_no_show_outcome,
+)
 from app.services.scheduling import (
     acquire_slot_hold,
     booking_lead_cutoff,
@@ -53,6 +56,7 @@ from app.schemas.booking import (
     CreateBookingRequest,
     PayFastRedirectResponse,
     RaiseDisputeRequest,
+    ReportNoShowRequest,
     RescheduleBookingRequest,
 )
 
@@ -210,6 +214,40 @@ def _payfast_form_data(booking: Booking, payment: Payment, user_email: str) -> d
     return data
 
 
+def _upsert_refund(
+    payment: Payment,
+    *,
+    db: AsyncSession,
+    amount_cents: int,
+    status_value: str,
+    reason: str | None,
+    requested_by_role: str,
+    policy_code: str,
+    notes: str,
+) -> None:
+    refund = payment.refund
+    if refund is None:
+        db.add(
+            Refund(
+                payment_id=payment.id,
+                amount_cents=amount_cents,
+                status=status_value,
+                reason=reason,
+                requested_by_role=requested_by_role,
+                policy_code=policy_code,
+                notes=notes,
+            )
+        )
+        return
+
+    refund.amount_cents = amount_cents
+    refund.status = status_value
+    refund.reason = reason
+    refund.requested_by_role = requested_by_role
+    refund.policy_code = policy_code
+    refund.notes = notes
+
+
 def _apply_confirmed_booking_cancellation(
     booking: Booking,
     *,
@@ -244,25 +282,16 @@ def _apply_confirmed_booking_cancellation(
     payment.gateway_metadata = metadata
 
     if outcome.refund_amount_cents > 0:
-        refund = payment.refund
-        if refund is None:
-            refund = Refund(
-                payment_id=payment.id,
-                amount_cents=outcome.refund_amount_cents,
-                status="pending",
-                reason=reason,
-                requested_by_role=actor_role,
-                policy_code=outcome.policy_code,
-                notes="Process this refund manually in PayFast and then mark it refunded here.",
-            )
-            db.add(refund)
-        else:
-            refund.amount_cents = outcome.refund_amount_cents
-            refund.status = "pending"
-            refund.reason = reason
-            refund.requested_by_role = actor_role
-            refund.policy_code = outcome.policy_code
-            refund.notes = "Process this refund manually in PayFast and then mark it refunded here."
+        _upsert_refund(
+            payment,
+            db=db,
+            amount_cents=outcome.refund_amount_cents,
+            status_value="pending",
+            reason=reason,
+            requested_by_role=actor_role,
+            policy_code=outcome.policy_code,
+            notes="Process this refund manually in PayFast and then mark it refunded here.",
+        )
 
     if outcome.teacher_payout_cents > 0 and payment.payout is None:
         db.add(
@@ -272,6 +301,70 @@ def _apply_confirmed_booking_cancellation(
                 amount_cents=outcome.teacher_payout_cents,
                 status="pending",
                 notes=f"Created from cancellation policy: {outcome.policy_code}",
+            )
+        )
+
+
+def _apply_booking_no_show(
+    booking: Booking,
+    *,
+    reason: str | None,
+    actor_role: str,
+    now_utc: datetime,
+    db: AsyncSession,
+) -> None:
+    if actor_role not in {"parent", "teacher"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only parents or teachers can report a no-show",
+        )
+
+    payment = booking.payment
+    if payment is None or payment.status != "complete":
+        return
+
+    outcome = calculate_no_show_outcome(
+        reported_by_role=actor_role,
+        amount_cents=booking.amount_cents,
+        original_teacher_payout_cents=booking.teacher_payout_cents,
+        original_commission_cents=booking.commission_cents,
+    )
+    booking.teacher_payout_cents = outcome.teacher_payout_cents
+    booking.commission_cents = outcome.commission_cents
+
+    metadata = dict(payment.gateway_metadata or {})
+    metadata["no_show"] = {
+        "policy_code": outcome.policy_code,
+        "refund_amount_cents": outcome.refund_amount_cents,
+        "teacher_payout_cents": outcome.teacher_payout_cents,
+        "commission_cents": outcome.commission_cents,
+        "reported_at": now_utc.isoformat(),
+        "reported_by_role": actor_role,
+    }
+    payment.gateway_metadata = metadata
+
+    if outcome.refund_amount_cents > 0:
+        _upsert_refund(
+            payment,
+            db=db,
+            amount_cents=outcome.refund_amount_cents,
+            status_value="pending",
+            reason=reason,
+            requested_by_role=actor_role,
+            policy_code=outcome.policy_code,
+            notes="Process this no-show refund manually in PayFast and then mark it refunded here.",
+        )
+        if payment.payout and payment.payout.status in {"pending", "processing"}:
+            payment.payout.status = "failed"
+            payment.payout.notes = f"Payout paused because the lesson was marked as {booking.status}."
+    elif payment.payout is None:
+        db.add(
+            Payout(
+                teacher_id=booking.teacher_id,
+                payment_id=payment.id,
+                amount_cents=outcome.teacher_payout_cents,
+                status="pending",
+                notes=f"Created from no-show policy: {outcome.policy_code}",
             )
         )
 
@@ -821,7 +914,7 @@ async def complete_booking(
     payload: dict = Depends(require_any_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Teacher marks a confirmed lesson as completed."""
+    """Teacher marks an in-progress lesson as completed."""
     await enforce_rate_limit(
         request,
         rate_limit=BOOKING_MUTATION_RATE_LIMIT,
@@ -848,7 +941,7 @@ async def complete_booking(
     if not profile or booking.teacher_id != profile.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    if booking.status != "confirmed":
+    if booking.status not in {"confirmed", "in_progress"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Cannot complete a booking with status '{booking.status}'",
@@ -861,6 +954,9 @@ async def complete_booking(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="You can only mark a lesson complete after it has started",
         )
+
+    if booking.started_at is None:
+        booking.started_at = lesson_start
 
     if booking.learner is None or booking.subject is None:
         raise HTTPException(
@@ -888,6 +984,7 @@ async def complete_booking(
     booking.lesson_notes = body.lesson_notes
     booking.topics_covered = body.topics_covered
     booking.status = "completed"
+    booking.completed_at = now_utc
     await _notify_booking_participants(
         booking,
         db,
@@ -914,6 +1011,137 @@ async def complete_booking(
         },
     )
     await db.commit()
+    refreshed_booking = await db.scalar(
+        select(Booking)
+        .where(Booking.id == booking.id)
+        .options(
+            selectinload(Booking.learner),
+            selectinload(Booking.subject),
+        )
+    )
+    if refreshed_booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    return refreshed_booking
+
+
+@router.post("/{booking_id}/report-no-show", response_model=BookingResponse)
+async def report_booking_no_show(
+    booking_id: UUID,
+    body: ReportNoShowRequest,
+    request: Request,
+    payload: dict = Depends(require_any_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Parent or teacher reports that the other party missed the lesson."""
+    await enforce_rate_limit(
+        request,
+        rate_limit=BOOKING_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many booking changes. Please wait a moment and try again.",
+    )
+    booking = await db.scalar(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(
+            selectinload(Booking.payment).selectinload(Payment.payout),
+            selectinload(Booking.payment).selectinload(Payment.refund),
+            selectinload(Booking.learner),
+            selectinload(Booking.subject),
+        )
+    )
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
+    await _assert_booking_access(booking, payload, db)
+
+    actor_role = payload.get("role", "")
+    if actor_role not in {"parent", "teacher"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only parents or teachers can report a no-show",
+        )
+
+    if booking.status not in {"confirmed", "in_progress"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Cannot report a no-show for a booking with status '{booking.status}'",
+        )
+
+    now_utc = datetime.now(UTC)
+    lesson_start = normalize_utc(booking.scheduled_at)
+    grace_threshold = lesson_start + timedelta(minutes=settings.BOOKING_NO_SHOW_GRACE_MINUTES)
+    if now_utc < grace_threshold:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"You can only report a no-show {settings.BOOKING_NO_SHOW_GRACE_MINUTES} "
+                "minutes after the lesson start time"
+            ),
+        )
+
+    room_url = booking.video_room_url
+    booking.started_at = booking.started_at or lesson_start
+    booking.completed_at = None
+    booking.no_show_reported_at = now_utc
+    booking.no_show_reported_by_role = actor_role
+    booking.no_show_reason = body.reason
+    booking.video_room_url = None
+    booking.status = "no_show_teacher" if actor_role == "parent" else "no_show_parent"
+
+    _apply_booking_no_show(
+        booking,
+        reason=body.reason,
+        actor_role=actor_role,
+        now_utc=now_utc,
+        db=db,
+    )
+
+    await _notify_booking_participants(
+        booking,
+        db,
+        parent_title="Lesson marked as no-show",
+        parent_body=(
+            "You reported the teacher as absent for this lesson."
+            if actor_role == "parent"
+            else "The teacher reported that the learner did not attend this lesson."
+        ),
+        teacher_title="Lesson marked as no-show",
+        teacher_body=(
+            "The parent reported that you did not attend this lesson."
+            if actor_role == "parent"
+            else "You reported that the learner did not attend this lesson."
+        ),
+        notification_type="booking_no_show",
+        metadata={
+            "booking_id": str(booking.id),
+            "reported_by_role": actor_role,
+            "status": booking.status,
+        },
+    )
+    await create_audit_log(
+        db,
+        action="booking.no_show.report",
+        resource_type="booking",
+        resource_id=booking.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=actor_role,
+        request=request,
+        metadata={
+            "reported_by_role": actor_role,
+            "resulting_status": booking.status,
+            "scheduled_at": booking.scheduled_at,
+            "has_reason": bool(body.reason),
+        },
+    )
+    await db.commit()
+
+    if room_url:
+        import asyncio
+        from app.services.video import delete_room
+
+        room_name = room_url.rstrip("/").split("/")[-1]
+        asyncio.create_task(delete_room(room_name))
+
     refreshed_booking = await db.scalar(
         select(Booking)
         .where(Booking.id == booking.id)

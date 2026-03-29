@@ -300,6 +300,8 @@ export type BookingStatus =
   | "confirmed"
   | "in_progress"
   | "completed"
+  | "no_show_parent"
+  | "no_show_teacher"
   | "disputed"
   | "cancelled"
   | "expired"
@@ -323,6 +325,11 @@ export interface Booking {
   recurringBookingId?: string | null;
   lessonNotes?: string | null;
   topicsCovered?: string[];
+  startedAt?: string | null;
+  completedAt?: string | null;
+  noShowReportedAt?: string | null;
+  noShowReportedByRole?: "parent" | "teacher" | null;
+  noShowReason?: string | null;
   // Nested snippets (populated on list endpoint)
   learner?: { id: string; firstName: string; lastName: string; grade: string; curriculum: Curriculum } | null;
   subject?: { id: string; name: string; slug: string } | null;

@@ -112,9 +112,60 @@ def expire_pending_booking_holds() -> None:
 
 
 @celery_app.task
+def start_due_lessons() -> None:
+    """Move confirmed lessons into in-progress once their start time has arrived."""
+
+    async def _run() -> list[str]:
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+        from app.core.config import settings
+        from app.models.booking import Booking
+        from app.models.payment import Payment
+
+        engine = create_async_engine(settings.DATABASE_URL, echo=False)
+        started_ids: list[str] = []
+
+        try:
+            async with AsyncSession(engine) as db:
+                now = datetime.now(UTC)
+
+                rows = (
+                    await db.execute(
+                        select(Booking, Payment)
+                        .join(Payment, Payment.booking_id == Booking.id)
+                        .where(
+                            Booking.status == "confirmed",
+                            Payment.status == "complete",
+                            Booking.scheduled_at <= now,
+                        )
+                    )
+                ).all()
+
+                for booking, _payment in rows:
+                    lesson_end = booking.scheduled_at + timedelta(minutes=booking.duration_minutes)
+                    if lesson_end.replace(tzinfo=UTC) <= now:
+                        continue
+
+                    booking.status = "in_progress"
+                    booking.started_at = booking.started_at or now
+                    started_ids.append(str(booking.id))
+
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+        return started_ids
+
+    started = asyncio.run(_run())
+    if started:
+        logger.info("start_due_lessons.done", count=len(started), booking_ids=started)
+
+
+@celery_app.task
 def auto_complete_lessons() -> None:
     """
-    Mark confirmed bookings as 'completed' once their scheduled time + duration
+    Mark elapsed live bookings as 'completed' once their scheduled time + duration
     has elapsed, then create pending Payout records for each.
     Runs every 15 minutes via Celery Beat.
     """
@@ -133,13 +184,13 @@ def auto_complete_lessons() -> None:
             async with AsyncSession(engine) as db:
                 now = datetime.now(UTC)
 
-                # Confirmed bookings whose end time has passed
+                # Live bookings whose end time has passed
                 result = await db.execute(
                     select(Booking, Payment)
                     .join(Payment, Payment.booking_id == Booking.id)
                     .outerjoin(Payout, Payout.payment_id == Payment.id)
                     .where(
-                        Booking.status == "confirmed",
+                        Booking.status.in_(["confirmed", "in_progress"]),
                         Payment.status == "complete",
                         Payout.id.is_(None),
                     )
@@ -152,7 +203,9 @@ def auto_complete_lessons() -> None:
                     if lesson_end.replace(tzinfo=UTC) > now:
                         continue
 
+                    booking.started_at = booking.started_at or booking.scheduled_at
                     booking.status = "completed"
+                    booking.completed_at = booking.completed_at or now
                     payout = Payout(
                         teacher_id=booking.teacher_id,
                         payment_id=payment.id,

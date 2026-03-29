@@ -10,14 +10,15 @@ import { useAuthStore } from "@/stores/auth.store";
 export default function HomePage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
 
   // Redirect logged-in users straight to their dashboard
   useEffect(() => {
-    if (!user) return;
+    if (!user || !token) return;
     const dest =
       user.role === "admin" ? "/admin" : user.role === "teacher" ? "/teacher" : "/parent";
     router.replace(dest);
-  }, [user, router]);
+  }, [user, token, router]);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-6 text-center">

@@ -83,6 +83,11 @@ class BookingResponse(BaseModel):
     parent_notes: str | None = None
     lesson_notes: str | None = None
     topics_covered: list[str] = Field(default_factory=list)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    no_show_reported_at: datetime | None = None
+    no_show_reported_by_role: str | None = None
+    no_show_reason: str | None = None
     video_room_url: str | None = None
     teacher_id: UUID
     learner_id: UUID
@@ -123,6 +128,18 @@ class RescheduleBookingRequest(BaseModel):
 
 class RaiseDisputeRequest(BaseModel):
     reason: str = Field(..., min_length=10, max_length=2000)
+
+
+class ReportNoShowRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class CompleteBookingRequest(BaseModel):
