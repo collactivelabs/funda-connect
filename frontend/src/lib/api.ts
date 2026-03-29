@@ -9,6 +9,8 @@ import type {
   CurriculumOption,
   GradeLevelGroup,
   GoogleOAuthStartResponse,
+  LearnerReport,
+  LearnerProgress,
   NotificationListResponse,
   NotificationPreferences,
   ParentPaymentHistorySummary,
@@ -175,6 +177,8 @@ export const apiClient = {
   },
   parents: {
     getLearners: () => api.get("/parents/me/learners"),
+    getLearnerProgress: (learnerId: string) => api.get<LearnerProgress>(`/parents/me/learners/${learnerId}/progress`),
+    getLearnerReport: (learnerId: string) => api.get<LearnerReport>(`/parents/me/learners/${learnerId}/report`),
     getPayments: () => api.get<ParentPaymentHistorySummary>("/parents/me/payments"),
     getPaymentReceipt: (paymentId: string) => api.get<ParentPaymentReceipt>(`/parents/me/payments/${paymentId}/receipt`),
     createLearner: (body: unknown) => api.post("/parents/me/learners", body),
@@ -192,7 +196,11 @@ export const apiClient = {
       api.post(`/bookings/${id}/reschedule`, body),
     raiseDispute: (id: string, body: { reason: string }) =>
       api.post(`/bookings/${id}/dispute`, body),
-    complete: (id: string) => api.post(`/bookings/${id}/complete`),
+    complete: (id: string, body: { lessonNotes?: string | null; topicsCovered: string[] }) =>
+      api.post(`/bookings/${id}/complete`, {
+        lesson_notes: body.lessonNotes,
+        topics_covered: body.topicsCovered,
+      }),
     cancelSeries: (id: string, body: unknown) =>
       api.post(`/bookings/${id}/cancel-series`, body),
   },

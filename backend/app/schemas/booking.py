@@ -44,6 +44,7 @@ class LearnerSnippet(BaseModel):
     first_name: str
     last_name: str
     grade: str
+    curriculum: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,6 +52,7 @@ class LearnerSnippet(BaseModel):
 class SubjectSnippet(BaseModel):
     id: UUID
     name: str
+    slug: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -79,6 +81,8 @@ class BookingResponse(BaseModel):
     is_recurring: bool
     recurring_booking_id: UUID | None = None
     parent_notes: str | None = None
+    lesson_notes: str | None = None
+    topics_covered: list[str] = Field(default_factory=list)
     video_room_url: str | None = None
     teacher_id: UUID
     learner_id: UUID
@@ -119,6 +123,31 @@ class RescheduleBookingRequest(BaseModel):
 
 class RaiseDisputeRequest(BaseModel):
     reason: str = Field(..., min_length=10, max_length=2000)
+
+
+class CompleteBookingRequest(BaseModel):
+    lesson_notes: str | None = Field(default=None, max_length=5000)
+    topics_covered: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("lesson_notes")
+    @classmethod
+    def normalize_lesson_notes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("topics_covered")
+    @classmethod
+    def dedupe_topics(cls, value: list[str]) -> list[str]:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for item in value:
+            cleaned = item.strip()
+            if cleaned and cleaned not in seen:
+                deduped.append(cleaned)
+                seen.add(cleaned)
+        return deduped
 
 
 class PayFastRedirectResponse(BaseModel):

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LeaveReviewDialog } from "@/components/parent/leave-review-dialog";
+import { CompleteLessonDialog } from "@/components/shared/complete-lesson-dialog";
 import { RaiseDisputeDialog } from "@/components/shared/raise-dispute-dialog";
 import { RescheduleBookingDialog } from "@/components/shared/reschedule-booking-dialog";
 import { apiClient } from "@/lib/api";
@@ -52,7 +53,7 @@ export function BookingList({ role }: Props) {
 
   useEffect(() => {
     apiClient.bookings.list()
-      .then(({ data }) => setBookings(data as Booking[]))
+      .then(({ data }: { data: Booking[] }) => setBookings(data))
       .catch(() => null)
       .finally(() => setLoading(false));
   }, []);
@@ -198,6 +199,11 @@ function BookingRow({
               booking.isRecurring ? (isChildRecurring ? "Recurring" : "Recurring (root)") : null,
             ].filter(Boolean).join(" · ")}
           </p>
+          {booking.lessonNotes && (
+            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+              {booking.lessonNotes}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
           {canJoin && (
@@ -239,22 +245,10 @@ function BookingRow({
             />
           )}
           {canMarkComplete && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-xs h-7"
-              disabled={acting}
-              onClick={async () => {
-                setActing(true);
-                try {
-                  await apiClient.bookings.complete(booking.id);
-                  onUpdated(booking.id, { status: "completed" });
-                } catch { /* ignore */ }
-                setActing(false);
-              }}
-            >
-              Mark complete
-            </Button>
+            <CompleteLessonDialog
+              booking={booking}
+              onCompleted={(nextBooking) => onUpdated(booking.id, nextBooking)}
+            />
           )}
           {booking.isRecurring && booking.status === "confirmed" && (
             <Button

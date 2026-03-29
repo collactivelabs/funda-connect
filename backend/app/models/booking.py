@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -65,6 +65,8 @@ class Booking(UUIDMixin, TimestampMixin, Base):
 
     # Notes
     parent_notes: Mapped[str | None] = mapped_column(Text)
+    lesson_notes: Mapped[str | None] = mapped_column(Text)
+    topics_covered: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     cancellation_reason: Mapped[str | None] = mapped_column(Text)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_by_role: Mapped[str | None] = mapped_column(String(20))

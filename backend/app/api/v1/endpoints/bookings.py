@@ -30,6 +30,7 @@ from app.services.rate_limits import (
     build_rate_limit_identifier,
     enforce_rate_limit,
 )
+from app.services.reference_data import list_topics
 from app.services.refunds import calculate_booking_cancellation_outcome
 from app.services.scheduling import (
     acquire_slot_hold,
@@ -48,6 +49,7 @@ from app.services.scheduling import (
 from app.schemas.booking import (
     BookingResponse,
     CancelBookingRequest,
+    CompleteBookingRequest,
     CreateBookingRequest,
     PayFastRedirectResponse,
     RaiseDisputeRequest,
@@ -814,6 +816,7 @@ async def cancel_booking(
 @router.post("/{booking_id}/complete", response_model=BookingResponse)
 async def complete_booking(
     booking_id: UUID,
+    body: CompleteBookingRequest,
     request: Request,
     payload: dict = Depends(require_any_user),
     db: AsyncSession = Depends(get_db),
@@ -825,7 +828,15 @@ async def complete_booking(
         identifier=build_rate_limit_identifier(request, payload["sub"]),
         detail="Too many booking changes. Please wait a moment and try again.",
     )
-    booking = await db.get(Booking, booking_id)
+    booking = await db.scalar(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(
+            selectinload(Booking.learner),
+            selectinload(Booking.subject),
+            selectinload(Booking.teacher).selectinload(TeacherProfile.user),
+        )
+    )
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
@@ -851,6 +862,31 @@ async def complete_booking(
             detail="You can only mark a lesson complete after it has started",
         )
 
+    if booking.learner is None or booking.subject is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Booking is missing learner or subject context",
+        )
+
+    allowed_topic_ids = {
+        topic.id
+        for topic in list_topics(
+            subject=booking.subject.slug,
+            grade=booking.learner.grade,
+            curriculum=booking.learner.curriculum,
+        )
+    }
+    invalid_topic_ids = [
+        topic_id for topic_id in body.topics_covered if topic_id not in allowed_topic_ids
+    ]
+    if invalid_topic_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="One or more selected topics are invalid for this lesson",
+        )
+
+    booking.lesson_notes = body.lesson_notes
+    booking.topics_covered = body.topics_covered
     booking.status = "completed"
     await _notify_booking_participants(
         booking,
@@ -870,9 +906,25 @@ async def complete_booking(
         actor_user_id=UUID(payload["sub"]),
         actor_role=payload.get("role"),
         request=request,
-        metadata={"scheduled_at": booking.scheduled_at, "teacher_id": booking.teacher_id},
+        metadata={
+            "scheduled_at": booking.scheduled_at,
+            "teacher_id": booking.teacher_id,
+            "has_lesson_notes": bool(booking.lesson_notes),
+            "topics_count": len(booking.topics_covered or []),
+        },
     )
-    return booking
+    await db.commit()
+    refreshed_booking = await db.scalar(
+        select(Booking)
+        .where(Booking.id == booking.id)
+        .options(
+            selectinload(Booking.learner),
+            selectinload(Booking.subject),
+        )
+    )
+    if refreshed_booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    return refreshed_booking
 
 
 @router.post("/{booking_id}/dispute", response_model=BookingResponse)

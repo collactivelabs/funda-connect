@@ -243,3 +243,11 @@ def list_topics(
         ]
 
     return results
+
+
+def get_topics_by_ids(topic_ids: list[str]) -> list[TopicOptionResponse]:
+    if not topic_ids:
+        return []
+
+    topic_map = {topic.id: topic for topic in TOPICS}
+    return [topic_map[topic_id] for topic_id in topic_ids if topic_id in topic_map]

@@ -48,9 +48,10 @@ This file tracks outstanding work identified by comparing the original technical
 ## 5. Bookings, Learners, And Lesson Operations
 
 - [x] Add rescheduling flow for bookings.
-- [ ] Add learner progress tracking.
-- [ ] Add learner report export.
-- [ ] Persist and surface richer lesson notes/topics/attendance if those remain part of the product scope.
+- [x] Add learner progress tracking.
+- [x] Add learner report export.
+- [x] Persist and surface lesson notes and covered topics on completed lessons.
+- [ ] Decide whether attendance/no-show tracking still needs a first-class workflow.
 - [ ] Decide whether blocked dates and calendar sync are still needed for scheduling.
 
 ## 6. Notifications

@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.reference_data import TopicOptionResponse
+
 
 class LearnerResponse(BaseModel):
     id: UUID
@@ -85,3 +87,43 @@ class ParentPaymentReceiptResponse(BaseModel):
     is_trial: bool
     is_series: bool = False
     series_lessons: int = 1
+
+
+class LearnerSubjectProgressResponse(BaseModel):
+    subject_id: UUID
+    subject_name: str
+    completed_lessons: int
+    total_minutes: int
+    latest_lesson_at: datetime | None = None
+
+
+class LearnerLessonProgressResponse(BaseModel):
+    booking_id: UUID
+    scheduled_at: datetime
+    duration_minutes: int
+    status: str
+    subject_name: str
+    teacher_name: str
+    lesson_notes: str | None = None
+    topics_covered: list[TopicOptionResponse] = Field(default_factory=list)
+
+
+class LearnerProgressResponse(BaseModel):
+    learner_id: UUID
+    learner_name: str
+    grade: str
+    curriculum: str
+    completed_lessons: int
+    upcoming_lessons: int
+    total_minutes: int
+    subject_count: int
+    topic_count: int
+    last_completed_at: datetime | None = None
+    subjects: list[LearnerSubjectProgressResponse] = Field(default_factory=list)
+    topics_covered: list[TopicOptionResponse] = Field(default_factory=list)
+    recent_lessons: list[LearnerLessonProgressResponse] = Field(default_factory=list)
+
+
+class LearnerReportResponse(LearnerProgressResponse):
+    report_reference: str
+    generated_at: datetime

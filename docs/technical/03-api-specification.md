@@ -276,7 +276,7 @@ Update learner details.
 Get learner progress summary (lessons completed, subjects, topics covered).
 
 ### `GET /learners/{id}/report` 🔒 Parent
-Generate a downloadable progress report (PDF).
+Generate a printable/downloadable learner progress report payload for export.
 
 ---
 

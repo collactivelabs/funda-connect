@@ -245,6 +245,46 @@ export interface ParentPaymentReceipt {
   seriesLessons: number;
 }
 
+export interface LearnerSubjectProgress {
+  subjectId: string;
+  subjectName: string;
+  completedLessons: number;
+  totalMinutes: number;
+  latestLessonAt?: string | null;
+}
+
+export interface LearnerLessonProgress {
+  bookingId: string;
+  scheduledAt: string;
+  durationMinutes: number;
+  status: BookingStatus;
+  subjectName: string;
+  teacherName: string;
+  lessonNotes?: string | null;
+  topicsCovered: TopicReference[];
+}
+
+export interface LearnerProgress {
+  learnerId: string;
+  learnerName: string;
+  grade: string;
+  curriculum: Curriculum;
+  completedLessons: number;
+  upcomingLessons: number;
+  totalMinutes: number;
+  subjectCount: number;
+  topicCount: number;
+  lastCompletedAt?: string | null;
+  subjects: LearnerSubjectProgress[];
+  topicsCovered: TopicReference[];
+  recentLessons: LearnerLessonProgress[];
+}
+
+export interface LearnerReport extends LearnerProgress {
+  reportReference: string;
+  generatedAt: string;
+}
+
 // ── Subjects ──────────────────────────────────────────────────
 export interface Subject {
   id: string;
@@ -281,9 +321,11 @@ export interface Booking {
   isTrial: boolean;
   isRecurring: boolean;
   recurringBookingId?: string | null;
+  lessonNotes?: string | null;
+  topicsCovered?: string[];
   // Nested snippets (populated on list endpoint)
-  learner?: { firstName: string; lastName: string; grade: string } | null;
-  subject?: { id: string; name: string } | null;
+  learner?: { id: string; firstName: string; lastName: string; grade: string; curriculum: Curriculum } | null;
+  subject?: { id: string; name: string; slug: string } | null;
 }
 
 export interface BookableSlot {

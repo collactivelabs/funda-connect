@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { PaymentReceiptPage } from "@/components/parent/payment-receipt-page";
 
 export const metadata: Metadata = { title: "Payment Receipt" };
-export const unstable_instant = true;
 
 export default async function ParentPaymentReceiptRoute({
   params,

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from collections import defaultdict
 from uuid import UUID
 
@@ -14,11 +15,14 @@ from app.models.teacher import TeacherProfile
 from app.schemas.parent import (
     CreateLearnerRequest,
     LearnerResponse,
+    LearnerProgressResponse,
+    LearnerReportResponse,
     ParentPaymentHistoryItemResponse,
     ParentPaymentHistoryResponse,
     ParentPaymentReceiptResponse,
     UpdateLearnerRequest,
 )
+from app.services.learner_progress import build_learner_progress_summary
 from app.services.prepaid_series import (
     aggregate_payment_status,
     aggregate_refund_status,
@@ -26,6 +30,7 @@ from app.services.prepaid_series import (
     recurring_weeks_from_metadata,
     series_root_booking_id,
 )
+from app.services.reports import build_learner_report_reference
 from app.services.receipts import build_receipt_reference, net_paid_amount_cents
 
 router = APIRouter()
@@ -128,6 +133,75 @@ async def list_learners(
         .order_by(Learner.created_at)
     )
     return result.all()
+
+
+@router.get("/me/learners/{learner_id}/progress", response_model=LearnerProgressResponse)
+async def get_learner_progress(
+    learner_id: UUID,
+    payload: dict = Depends(require_parent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return progress summary for a learner owned by the authenticated parent."""
+    profile = await _get_parent_profile(payload, db)
+    learner = await db.scalar(
+        select(Learner).where(
+            Learner.id == learner_id,
+            Learner.parent_id == profile.id,
+            Learner.is_active == True,  # noqa: E712
+        )
+    )
+    if not learner:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Learner not found")
+
+    result = await db.scalars(
+        select(Booking)
+        .where(Booking.learner_id == learner.id)
+        .options(
+            selectinload(Booking.subject),
+            selectinload(Booking.teacher).selectinload(TeacherProfile.user),
+        )
+        .order_by(Booking.scheduled_at.desc())
+    )
+    bookings = result.all()
+    return build_learner_progress_summary(learner, bookings)
+
+
+@router.get("/me/learners/{learner_id}/report", response_model=LearnerReportResponse)
+async def get_learner_report(
+    learner_id: UUID,
+    payload: dict = Depends(require_parent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a printable learner progress report for a learner owned by the authenticated parent."""
+    profile = await _get_parent_profile(payload, db)
+    learner = await db.scalar(
+        select(Learner).where(
+            Learner.id == learner_id,
+            Learner.parent_id == profile.id,
+            Learner.is_active == True,  # noqa: E712
+        )
+    )
+    if not learner:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Learner not found")
+
+    result = await db.scalars(
+        select(Booking)
+        .where(Booking.learner_id == learner.id)
+        .options(
+            selectinload(Booking.subject),
+            selectinload(Booking.teacher).selectinload(TeacherProfile.user),
+        )
+        .order_by(Booking.scheduled_at.desc())
+    )
+    bookings = result.all()
+    summary = build_learner_progress_summary(learner, bookings)
+    generated_at = datetime.now(UTC)
+
+    return LearnerReportResponse(
+        **summary.model_dump(),
+        report_reference=build_learner_report_reference(learner.id, generated_at),
+        generated_at=generated_at,
+    )
 
 
 @router.get("/me/payments", response_model=ParentPaymentHistoryResponse)

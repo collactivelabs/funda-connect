@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api";
 import { AddLearnerDialog } from "./add-learner-dialog";
+import { LearnerProgressSection } from "./learner-progress-section";
 import { PaymentHistorySection } from "./payment-history-section";
 import { PaymentStatusBanner } from "./payment-status-banner";
 import { BookingList } from "@/components/shared/booking-list";
@@ -86,14 +87,26 @@ export function ParentDashboard() {
                   </CardTitle>
                   <CardDescription>{learner.grade}</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                   <Badge variant="secondary">{learner.curriculum}</Badge>
+                  <div>
+                    <Link
+                      href={`/parent/learners/${learner.id}/report`}
+                      className={buttonVariants({ variant: "outline" }) + " h-8 px-3 text-xs"}
+                    >
+                      View report
+                    </Link>
+                  </div>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
       </section>
+
+      <Separator />
+
+      <LearnerProgressSection learners={learners} />
 
       <Separator />
 
