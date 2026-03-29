@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification import Notification, NotificationPreference
 from app.models.user import User
 from app.schemas.notification import NotificationPreferencesResponse, NotificationResponse
+from app.services.sms import normalize_phone_number, sms_provider_configured
 
 _DEFAULT_PREFERENCES = {
     "in_app_enabled": True,
@@ -137,3 +138,23 @@ async def list_admin_user_ids(db: AsyncSession) -> list[UUID]:
         select(User.id).where(User.role == "admin", User.is_active == True)  # noqa: E712
     )
     return list(result.all())
+
+
+def validate_notification_preference_channels(
+    *,
+    user: User,
+    sms_enabled: bool | None = None,
+    push_enabled: bool | None = None,
+) -> None:
+    if sms_enabled is True:
+        if not sms_provider_configured():
+            raise ValueError("SMS delivery is not configured for this environment yet.")
+        if not user.phone:
+            raise ValueError("Add a phone number to your account before enabling SMS notifications.")
+        try:
+            normalize_phone_number(user.phone)
+        except ValueError as exc:
+            raise ValueError("Your saved phone number is invalid for SMS delivery.") from exc
+
+    if push_enabled is True:
+        raise ValueError("Push notifications are not configured yet.")

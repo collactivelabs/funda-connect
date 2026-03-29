@@ -3,11 +3,14 @@ from uuid import uuid4
 import pytest
 
 from app.models.notification import Notification, NotificationPreference
+from app.models.user import User
 from app.services.notifications import (
     create_in_app_notification,
     get_notification_preferences_snapshot,
     get_or_create_notification_preferences,
+    validate_notification_preference_channels,
 )
+from app.core.security import hash_password
 
 
 class FakeSession:
@@ -69,3 +72,38 @@ async def test_in_app_notifications_respect_disabled_preference():
 
     assert notification is None
     assert session.notifications == []
+
+
+def _build_user(*, phone: str | None = None) -> User:
+    return User(
+        email=f"{uuid4()}@example.com",
+        password_hash=hash_password("password123"),
+        first_name="Test",
+        last_name="User",
+        role="parent",
+        phone=phone,
+        email_verified=True,
+    )
+
+
+def test_validate_notification_preferences_rejects_sms_without_phone(monkeypatch):
+    user = _build_user(phone=None)
+    monkeypatch.setattr("app.services.notifications.sms_provider_configured", lambda: True)
+
+    with pytest.raises(ValueError, match="Add a phone number to your account"):
+        validate_notification_preference_channels(user=user, sms_enabled=True)
+
+
+def test_validate_notification_preferences_rejects_sms_without_provider(monkeypatch):
+    user = _build_user(phone="+27821234567")
+    monkeypatch.setattr("app.services.notifications.sms_provider_configured", lambda: False)
+
+    with pytest.raises(ValueError, match="SMS delivery is not configured"):
+        validate_notification_preference_channels(user=user, sms_enabled=True)
+
+
+def test_validate_notification_preferences_allows_sms_when_phone_and_provider_available(monkeypatch):
+    user = _build_user(phone="+27821234567")
+    monkeypatch.setattr("app.services.notifications.sms_provider_configured", lambda: True)
+
+    validate_notification_preference_channels(user=user, sms_enabled=True)

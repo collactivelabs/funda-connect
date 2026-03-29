@@ -60,7 +60,7 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Add notification center endpoints and UI.
 - [x] Add notification preferences management.
 - [x] Add in-app notifications for key booking, verification, payout, and refund events.
-- [ ] Add SMS delivery if still required.
+- [x] Add SMS delivery if still required.
 - [ ] Add push delivery if still required.
 - [ ] Add notification delivery tracking where useful.
 

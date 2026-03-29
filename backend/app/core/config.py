@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     # SMS
     BULKSMS_USERNAME: str = ""
     BULKSMS_PASSWORD: str = ""
+    AT_API_KEY: str = ""
+    AT_USERNAME: str = ""
 
     # Video
     DAILY_API_KEY: str = ""

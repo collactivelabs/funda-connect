@@ -42,6 +42,43 @@ def send_password_reset_message(
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def send_transactional_sms(self, to: str, message: str, event_type: str) -> None:
+    async def _run():
+        from app.services.sms import SMSConfigurationError, send_sms_message
+
+        try:
+            result = await send_sms_message(to=to, message=message)
+            logger.info(
+                "send_transactional_sms.done",
+                to=result["recipient"],
+                provider=result["provider"],
+                event_type=event_type,
+            )
+        except SMSConfigurationError as exc:
+            logger.warning(
+                "send_transactional_sms.skipped",
+                to=to,
+                event_type=event_type,
+                reason=str(exc),
+            )
+        except ValueError as exc:
+            logger.warning(
+                "send_transactional_sms.invalid_recipient",
+                to=to,
+                event_type=event_type,
+                reason=str(exc),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("send_transactional_sms.error", to=to, event_type=event_type, error=str(exc))
+            raise
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        raise self.retry(exc=exc) from exc
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def send_booking_confirmation(self, booking_id: str) -> None:
     """Send confirmation emails to both parent and teacher after payment."""
     async def _run():
@@ -55,6 +92,10 @@ def send_booking_confirmation(self, booking_id: str) -> None:
         from app.models.user import User
         from app.services.email import booking_confirmation_parent, booking_confirmation_teacher
         from app.services.notifications import notifications_enabled_for_channel
+        from app.services.sms import (
+            build_booking_confirmation_parent_sms,
+            build_booking_confirmation_teacher_sms,
+        )
 
         engine = create_async_engine(settings.DATABASE_URL, echo=False)
         try:
@@ -79,6 +120,7 @@ def send_booking_confirmation(self, booking_id: str) -> None:
 
                 subject_name = subject.name if subject else "Lesson"
                 scheduled = booking.scheduled_at.strftime("%A, %-d %B %Y at %H:%M SAST")
+                scheduled_sms = booking.scheduled_at.strftime("%a %d %b %H:%M SAST")
 
                 if await notifications_enabled_for_channel(db, parent_user.id, channel="email"):
                     booking_confirmation_parent(
@@ -92,6 +134,22 @@ def send_booking_confirmation(self, booking_id: str) -> None:
                         booking_id=str(booking.id),
                     )
 
+                if parent_user.phone and await notifications_enabled_for_channel(
+                    db, parent_user.id, channel="sms"
+                ):
+                    send_transactional_sms.apply_async(
+                        args=[
+                            parent_user.phone,
+                            build_booking_confirmation_parent_sms(
+                                teacher_name=f"{teacher_user.first_name} {teacher_user.last_name}",
+                                subject_name=subject_name,
+                                scheduled_at=scheduled_sms,
+                                booking_id=str(booking.id),
+                            ),
+                            "booking_confirmation_parent",
+                        ]
+                    )
+
                 if await notifications_enabled_for_channel(db, teacher_user.id, channel="email"):
                     booking_confirmation_teacher(
                         to=teacher_user.email,
@@ -101,6 +159,20 @@ def send_booking_confirmation(self, booking_id: str) -> None:
                         scheduled_at=scheduled,
                         duration_minutes=booking.duration_minutes,
                         payout_cents=booking.teacher_payout_cents,
+                    )
+                if teacher_user.phone and await notifications_enabled_for_channel(
+                    db, teacher_user.id, channel="sms"
+                ):
+                    send_transactional_sms.apply_async(
+                        args=[
+                            teacher_user.phone,
+                            build_booking_confirmation_teacher_sms(
+                                parent_name=f"{parent_user.first_name} {parent_user.last_name}",
+                                subject_name=subject_name,
+                                scheduled_at=scheduled_sms,
+                            ),
+                            "booking_confirmation_teacher",
+                        ]
                     )
         finally:
             await engine.dispose()
@@ -123,6 +195,7 @@ def notify_teacher_verification_result(self, teacher_id: str, new_status: str, n
         from app.models.user import User
         from app.services.email import verification_approved, verification_rejected
         from app.services.notifications import notifications_enabled_for_channel
+        from app.services.sms import build_verification_result_sms
 
         engine = create_async_engine(settings.DATABASE_URL, echo=False)
         try:
@@ -139,6 +212,19 @@ def notify_teacher_verification_result(self, teacher_id: str, new_status: str, n
                     verification_approved(to=user.email, teacher_name=user.first_name)
                 elif new_status in ("rejected", "suspended"):
                     verification_rejected(to=user.email, teacher_name=user.first_name, notes=notes)
+                if user.phone and await notifications_enabled_for_channel(db, user.id, channel="sms"):
+                    status_label = {
+                        "verified": "verified",
+                        "rejected": "rejected",
+                        "suspended": "suspended",
+                    }.get(new_status, new_status)
+                    send_transactional_sms.apply_async(
+                        args=[
+                            user.phone,
+                            build_verification_result_sms(status_label=status_label, notes=notes),
+                            "verification_result",
+                        ]
+                    )
         finally:
             await engine.dispose()
 
@@ -202,6 +288,7 @@ def send_payout_notification(self, payout_id: str) -> None:
         from app.models.user import User
         from app.services.email import payout_processed
         from app.services.notifications import notifications_enabled_for_channel
+        from app.services.sms import build_payout_processed_sms
 
         engine = create_async_engine(settings.DATABASE_URL, echo=False)
         try:
@@ -223,6 +310,17 @@ def send_payout_notification(self, payout_id: str) -> None:
                     amount_cents=payout.amount_cents,
                     bank_reference=payout.bank_reference,
                 )
+                if user.phone and await notifications_enabled_for_channel(db, user.id, channel="sms"):
+                    send_transactional_sms.apply_async(
+                        args=[
+                            user.phone,
+                            build_payout_processed_sms(
+                                amount_cents=payout.amount_cents,
+                                bank_reference=payout.bank_reference,
+                            ),
+                            "payout_processed",
+                        ]
+                    )
         finally:
             await engine.dispose()
 
@@ -248,6 +346,7 @@ def send_refund_notification(self, refund_id: str) -> None:
         from app.models.user import User
         from app.services.email import refund_processed
         from app.services.notifications import notifications_enabled_for_channel
+        from app.services.sms import build_refund_processed_sms
 
         engine = create_async_engine(settings.DATABASE_URL, echo=False)
         try:
@@ -273,6 +372,17 @@ def send_refund_notification(self, refund_id: str) -> None:
                     amount_cents=refund.amount_cents,
                     lesson_reference=str(refund.payment.booking.id)[:8].upper(),
                 )
+                if user.phone and await notifications_enabled_for_channel(db, user.id, channel="sms"):
+                    send_transactional_sms.apply_async(
+                        args=[
+                            user.phone,
+                            build_refund_processed_sms(
+                                amount_cents=refund.amount_cents,
+                                lesson_reference=str(refund.payment.booking.id)[:8].upper(),
+                            ),
+                            "refund_processed",
+                        ]
+                    )
         finally:
             await engine.dispose()
 

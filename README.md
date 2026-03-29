@@ -153,6 +153,12 @@ SMTP_USER=
 SMTP_PASSWORD=
 EMAIL_FROM=noreply@fundaconnect.co.za
 
+# SMS (optional: configure one provider)
+BULKSMS_USERNAME=
+BULKSMS_PASSWORD=
+AT_API_KEY=
+AT_USERNAME=
+
 # Meilisearch
 MEILISEARCH_MASTER_KEY=
 
@@ -203,6 +209,7 @@ docker compose restart backend
 - **Weekly payouts** — Celery Beat batches teacher payouts every Monday
 - **Notification center** — in-app inbox with unread state, mark-read actions, and notification preferences
 - **Email notifications** — booking confirmation, verification result, payout processed, refund updates
+- **SMS notifications** — optional transactional SMS for key updates when a provider is configured and the user has a phone number on file
 - **Observability** — optional Sentry error tracking plus `/health` and `/health/ready` endpoints for uptime and dependency checks
 - **Admin dashboard** — teacher verification workflow, payout status management, platform stats
 

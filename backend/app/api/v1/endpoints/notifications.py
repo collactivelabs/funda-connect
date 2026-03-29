@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_any_user
 from app.models.notification import Notification
+from app.models.user import User
 from app.schemas.auth import MessageResponse
 from app.schemas.notification import (
     NotificationListResponse,
@@ -18,6 +19,7 @@ from app.services.notifications import (
     get_notification_preferences_snapshot,
     get_or_create_notification_preferences,
     notification_to_response,
+    validate_notification_preference_channels,
 )
 
 router = APIRouter()
@@ -76,6 +78,28 @@ async def update_notification_preferences(
     db: AsyncSession = Depends(get_db),
 ):
     user_id = UUID(payload["sub"])
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    try:
+        validate_notification_preference_channels(
+            user=user,
+            sms_enabled=body.sms_enabled,
+            push_enabled=body.push_enabled,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = (
+            status.HTTP_503_SERVICE_UNAVAILABLE
+            if detail in {
+                "SMS delivery is not configured for this environment yet.",
+                "Push notifications are not configured yet.",
+            }
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
     preferences = await get_or_create_notification_preferences(db, user_id)
 
     for field_name in ("in_app_enabled", "email_enabled", "sms_enabled", "push_enabled"):

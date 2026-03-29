@@ -32,7 +32,7 @@ const PREFERENCE_ROWS = [
   {
     key: "smsEnabled",
     label: "SMS notifications",
-    description: "Reserved for a future SMS delivery channel.",
+    description: "Send important updates to the phone number saved on your account.",
   },
   {
     key: "pushEnabled",
@@ -334,7 +334,8 @@ export function NotificationCenter() {
             <div className="space-y-3">
               {PREFERENCE_ROWS.map((preference) => {
                 const enabled = preferences?.[preference.key] ?? false;
-                const isComingSoon = preference.key === "smsEnabled" || preference.key === "pushEnabled";
+                const isComingSoon = preference.key === "pushEnabled";
+                const isDisabled = !preferences || preference.key === "pushEnabled";
 
                 return (
                   <div
@@ -354,9 +355,9 @@ export function NotificationCenter() {
                         size="sm"
                         variant={enabled ? "default" : "outline"}
                         onClick={() => togglePreference(preference.key)}
-                        disabled={!preferences}
+                        disabled={isDisabled}
                       >
-                        {enabled ? "Enabled" : "Off"}
+                        {isComingSoon ? "Coming soon" : enabled ? "Enabled" : "Off"}
                       </Button>
                     </div>
                   </div>
