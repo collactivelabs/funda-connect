@@ -222,6 +222,12 @@ Update own teacher profile.
 ### `PUT /teachers/me/availability` 🔒 Teacher
 Set/update weekly availability slots.
 
+### `GET /teachers/me/blocked-dates` 🔒 Teacher
+List the teacher's blocked one-off dates.
+
+### `PUT /teachers/me/blocked-dates` 🔒 Teacher
+Replace the teacher's blocked one-off dates.
+
 ### `POST /teachers/me/subjects` 🔒 Teacher
 Add a subject-grade-curriculum combination.
 

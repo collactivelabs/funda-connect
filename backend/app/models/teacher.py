@@ -40,6 +40,9 @@ class TeacherProfile(UUIDMixin, TimestampMixin, Base):
     availability_slots: Mapped[list["AvailabilitySlot"]] = relationship(  # noqa: F821
         "AvailabilitySlot", back_populates="teacher", cascade="all, delete-orphan"
     )
+    blocked_dates: Mapped[list["BlockedDate"]] = relationship(  # noqa: F821
+        "BlockedDate", back_populates="teacher", cascade="all, delete-orphan"
+    )
     bookings: Mapped[list["Booking"]] = relationship("Booking", back_populates="teacher")  # noqa: F821
 
     def __repr__(self) -> str:

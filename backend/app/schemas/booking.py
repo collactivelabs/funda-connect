@@ -17,15 +17,41 @@ class AvailabilitySlotResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BlockedDateResponse(BaseModel):
+    id: UUID
+    date: date
+    reason: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class SetAvailabilityRequest(BaseModel):
     """Replaces all slots for the teacher."""
     slots: list["SlotInput"]
+
+
+class SetBlockedDatesRequest(BaseModel):
+    """Replaces all blocked dates for the teacher."""
+    dates: list["BlockedDateInput"]
 
 
 class SlotInput(BaseModel):
     day_of_week: int = Field(..., ge=0, le=6)
     start_time: str  # "HH:MM"
     end_time: str    # "HH:MM"
+
+
+class BlockedDateInput(BaseModel):
+    date: date
+    reason: str | None = Field(default=None, max_length=255)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 # ── Bookings ─────────────────────────────────────────────────

@@ -39,6 +39,13 @@ def booking_occurrence_starts(start_at: datetime, recurring_weeks: int = 1) -> l
     return [base + timedelta(weeks=week) for week in range(total_weeks)]
 
 
+def occurrences_touch_blocked_dates(
+    occurrence_starts: list[datetime],
+    blocked_dates: set[date],
+) -> bool:
+    return any(normalize_utc(start).astimezone(SAST).date() in blocked_dates for start in occurrence_starts)
+
+
 def slot_lock_keys(
     teacher_id: UUID,
     occurrence_starts: list[datetime],

@@ -11,12 +11,13 @@ import { apiClient } from "@/lib/api";
 import { hasUploadedAllRequiredDocuments } from "@/lib/teacher-documents";
 import { EditProfileDialog } from "./edit-profile-dialog";
 import { SetAvailabilitySheet } from "./set-availability-sheet";
+import { ManageBlockedDatesSheet } from "./manage-blocked-dates-sheet";
 import { ManageSubjectsDialog } from "./manage-subjects-dialog";
 import { UploadDocumentDialog } from "./upload-document-dialog";
 import { EarningsSection } from "./earnings-section";
 import { OnboardingChecklist } from "./onboarding-checklist";
 import { BookingList } from "@/components/shared/booking-list";
-import type { AvailabilitySlot, TeacherProfile, VerificationDocument } from "@/types";
+import type { AvailabilitySlot, BlockedDate, TeacherProfile, VerificationDocument } from "@/types";
 
 const VERIFICATION_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pending: { label: "Pending verification", variant: "secondary" },
@@ -29,11 +30,13 @@ const VERIFICATION_LABELS: Record<string, { label: string; variant: "default" | 
 export function TeacherDashboard() {
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
+  const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
   const [documents, setDocuments] = useState<VerificationDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [availOpen, setAvailOpen] = useState(false);
+  const [blockedDatesOpen, setBlockedDatesOpen] = useState(false);
   const [subjectsOpen, setSubjectsOpen] = useState(false);
 
   function loadDashboard() {
@@ -42,11 +45,13 @@ export function TeacherDashboard() {
     Promise.all([
       apiClient.teachers.getMe(),
       apiClient.teachers.getAvailability(),
+      apiClient.teachers.getBlockedDates(),
       apiClient.teachers.listDocuments(),
     ])
-      .then(([profileRes, availRes, documentsRes]) => {
+      .then(([profileRes, availRes, blockedDatesRes, documentsRes]) => {
         setProfile(profileRes.data as TeacherProfile);
         setAvailability(availRes.data as AvailabilitySlot[]);
+        setBlockedDates(blockedDatesRes.data as BlockedDate[]);
         setDocuments(documentsRes.data as VerificationDocument[]);
       })
       .catch(() => setLoadError(true))
@@ -192,6 +197,16 @@ export function TeacherDashboard() {
             </div>
             <Separator />
             <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Blocked dates</span>
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{blockedDates.length}</span>
+                <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => setBlockedDatesOpen(true)}>
+                  Manage
+                </Button>
+              </div>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Listed on marketplace</span>
               <Badge variant={profile.isListed ? "default" : "secondary"}>
                 {profile.isListed ? "Listed" : "Unlisted"}
@@ -250,6 +265,15 @@ export function TeacherDashboard() {
               <CardDescription>Add subjects, grade levels, and curricula you teach.</CardDescription>
             </CardHeader>
           </Card>
+          <Card
+            className="cursor-pointer transition-colors hover:bg-muted/50"
+            onClick={() => setBlockedDatesOpen(true)}
+          >
+            <CardHeader>
+              <CardTitle className="text-base">Block Dates</CardTitle>
+              <CardDescription>Mark holidays or one-off unavailable days so parents cannot book them.</CardDescription>
+            </CardHeader>
+          </Card>
         </div>
       </section>
 
@@ -264,6 +288,11 @@ export function TeacherDashboard() {
         open={availOpen}
         onOpenChange={setAvailOpen}
         onSaved={(slots) => setAvailability(slots)}
+      />
+      <ManageBlockedDatesSheet
+        open={blockedDatesOpen}
+        onOpenChange={setBlockedDatesOpen}
+        onSaved={(dates) => setBlockedDates(dates)}
       />
       <ManageSubjectsDialog
         teacherSubjects={profile.subjects}

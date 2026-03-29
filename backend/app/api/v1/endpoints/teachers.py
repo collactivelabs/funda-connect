@@ -1,6 +1,6 @@
 import asyncio
 import uuid as uuid_lib
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
 import boto3
@@ -15,14 +15,16 @@ from pydantic import BaseModel, ConfigDict
 from app.core.config import settings
 from app.core.deps import get_db, require_teacher
 from app.core.redis import get_redis
-from app.models.booking import AvailabilitySlot, Booking
+from app.models.booking import AvailabilitySlot, BlockedDate, Booking
 from app.models.curriculum import Subject
 from app.models.payment import Payout, VerificationDocument
 from app.models.teacher import TeacherProfile, TeacherSubject
 from app.models.user import User
 from app.schemas.booking import (
     AvailabilitySlotResponse,
+    BlockedDateResponse,
     BookableSlotResponse,
+    SetBlockedDatesRequest,
     SetAvailabilityRequest,
 )
 from app.services.scheduling import (
@@ -30,6 +32,7 @@ from app.services.scheduling import (
     are_slot_keys_available,
     booking_lead_cutoff,
     booking_occurrence_starts,
+    occurrences_touch_blocked_dates,
     format_date_label,
     format_time_label,
     get_teacher_booking_conflicts,
@@ -290,6 +293,49 @@ async def set_my_availability(
     db.add_all(slots)
     await db.flush()
     return slots
+
+
+@router.get("/me/blocked-dates", response_model=list[BlockedDateResponse])
+async def get_my_blocked_dates(
+    payload: dict = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await _get_my_profile(payload, db)
+    result = await db.scalars(
+        select(BlockedDate)
+        .where(BlockedDate.teacher_id == profile.id)
+        .order_by(BlockedDate.date, BlockedDate.created_at)
+    )
+    return result.all()
+
+
+@router.put("/me/blocked-dates", response_model=list[BlockedDateResponse])
+async def set_my_blocked_dates(
+    body: SetBlockedDatesRequest,
+    payload: dict = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace all blocked dates (full overwrite)."""
+    profile = await _get_my_profile(payload, db)
+    await db.execute(delete(BlockedDate).where(BlockedDate.teacher_id == profile.id))
+
+    seen_dates: set[date] = set()
+    blocked_dates: list[BlockedDate] = []
+    for item in sorted(body.dates, key=lambda row: row.date):
+        if item.date in seen_dates:
+            continue
+        seen_dates.add(item.date)
+        blocked_dates.append(
+            BlockedDate(
+                teacher_id=profile.id,
+                date=item.date,
+                reason=item.reason,
+            )
+        )
+
+    db.add_all(blocked_dates)
+    await db.flush()
+    return blocked_dates
 
 
 # ── Documents ─────────────────────────────────────────────────
@@ -581,6 +627,7 @@ async def get_teacher_bookable_slots(
         select(TeacherProfile)
         .where(TeacherProfile.id == teacher_id)
         .options(selectinload(TeacherProfile.availability_slots))
+        .options(selectinload(TeacherProfile.blocked_dates))
     )
     if not teacher:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
@@ -590,6 +637,7 @@ async def get_teacher_bookable_slots(
     availability_slots = [slot for slot in teacher.availability_slots if slot.is_active]
     if not availability_slots:
         return []
+    blocked_dates = {blocked_date.date for blocked_date in teacher.blocked_dates}
 
     ignored_booking_start: datetime | None = None
     if ignore_booking_id is not None:
@@ -622,6 +670,8 @@ async def get_teacher_bookable_slots(
 
     for day_offset in range(days):
         current_date = start_date + timedelta(days=day_offset)
+        if current_date in blocked_dates:
+            continue
         current_day_slots = sorted(
             (
                 slot
@@ -649,6 +699,9 @@ async def get_teacher_bookable_slots(
                     continue
 
                 occurrence_starts = booking_occurrence_starts(candidate_start_utc, recurring_weeks)
+                if occurrences_touch_blocked_dates(occurrence_starts, blocked_dates):
+                    candidate_start_local += step
+                    continue
 
                 if slot_conflicts_with_bookings(
                     conflicts,

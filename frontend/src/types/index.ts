@@ -378,6 +378,12 @@ export interface AvailabilitySlot {
   isActive: boolean;
 }
 
+export interface BlockedDate {
+  id: string;
+  date: string;
+  reason?: string | null;
+}
+
 // ── Search / Filter ───────────────────────────────────────────
 export interface TeacherSearchParams {
   q?: string;

@@ -9,6 +9,7 @@ from app.services.scheduling import (
     booking_hold_expires_at,
     booking_occurrence_starts,
     is_within_weekly_availability,
+    occurrences_touch_blocked_dates,
     slot_conflicts_with_bookings,
     slot_lock_keys,
 )
@@ -130,3 +131,13 @@ def test_slot_conflicts_with_bookings_can_ignore_the_booking_being_rescheduled()
     )
 
     assert slot_conflicts_with_bookings([confirmed], [occurrence_start], 60, ignore_booking_id=booking_id) is False
+
+
+def test_occurrences_touch_blocked_dates_detects_any_week_in_series():
+    occurrences = booking_occurrence_starts(
+        datetime(2026, 3, 30, 7, 0, tzinfo=UTC),
+        recurring_weeks=3,
+    )
+
+    assert occurrences_touch_blocked_dates(occurrences, {datetime(2026, 4, 6, 0, 0, tzinfo=UTC).date()}) is True
+    assert occurrences_touch_blocked_dates(occurrences, {datetime(2026, 4, 20, 0, 0, tzinfo=UTC).date()}) is False

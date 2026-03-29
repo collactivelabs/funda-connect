@@ -237,6 +237,8 @@ export const apiClient = {
     removeSubject: (subjectId: string) => api.delete(`/teachers/me/subjects/${subjectId}`),
     getAvailability: () => api.get("/teachers/me/availability"),
     setAvailability: (body: unknown) => api.put("/teachers/me/availability", body),
+    getBlockedDates: () => api.get("/teachers/me/blocked-dates"),
+    setBlockedDates: (body: unknown) => api.put("/teachers/me/blocked-dates", body),
     getPublicAvailability: (id: string) => api.get(`/teachers/${id}/availability`),
     getBookableSlots: (
       id: string,

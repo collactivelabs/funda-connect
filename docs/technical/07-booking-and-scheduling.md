@@ -53,6 +53,8 @@ Teachers can block specific dates (holidays, personal):
 }
 ```
 
+Blocked dates are applied on top of weekly availability when generating concrete bookable slots.
+
 ### 3.3 Available Slot Computation
 
 When a parent requests available slots for a teacher on a given date:

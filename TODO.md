@@ -52,7 +52,8 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Add learner report export.
 - [x] Persist and surface lesson notes and covered topics on completed lessons.
 - [x] Add a first-class attendance/no-show workflow for live lessons.
-- [ ] Decide whether blocked dates and calendar sync are still needed for scheduling.
+- [x] Add blocked dates to teacher scheduling.
+- [ ] Decide whether calendar sync is still needed for scheduling.
 
 ## 6. Notifications
 

@@ -40,6 +40,7 @@ from app.services.scheduling import (
     booking_lead_cutoff,
     booking_hold_expires_at,
     booking_occurrence_starts,
+    occurrences_touch_blocked_dates,
     normalize_utc,
     get_teacher_booking_conflicts,
     is_duration_supported,
@@ -415,6 +416,7 @@ async def create_booking(
         .where(TeacherProfile.id == body.teacher_id)
         .options(
             selectinload(TeacherProfile.availability_slots),
+            selectinload(TeacherProfile.blocked_dates),
             selectinload(TeacherProfile.subjects),
         )
     )
@@ -469,6 +471,14 @@ async def create_booking(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Selected time falls outside the teacher's availability",
+        )
+    if occurrences_touch_blocked_dates(
+        occurrence_starts,
+        {blocked_date.date for blocked_date in teacher.blocked_dates},
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Selected time falls on a blocked date for this teacher",
         )
 
     range_start = occurrence_starts[0]
@@ -702,7 +712,10 @@ async def reschedule_booking(
     teacher = await db.scalar(
         select(TeacherProfile)
         .where(TeacherProfile.id == booking.teacher_id)
-        .options(selectinload(TeacherProfile.availability_slots))
+        .options(
+            selectinload(TeacherProfile.availability_slots),
+            selectinload(TeacherProfile.blocked_dates),
+        )
     )
     if not teacher:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
@@ -715,6 +728,14 @@ async def reschedule_booking(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Selected time falls outside the teacher's availability",
+        )
+    if occurrences_touch_blocked_dates(
+        [next_start],
+        {blocked_date.date for blocked_date in teacher.blocked_dates},
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Selected time falls on a blocked date for this teacher",
         )
 
     conflicts = await get_teacher_booking_conflicts(
