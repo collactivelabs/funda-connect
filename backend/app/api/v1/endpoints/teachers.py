@@ -3,7 +3,6 @@ import uuid as uuid_lib
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
-import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import delete, or_, select
@@ -42,6 +41,7 @@ from app.services.scheduling import (
     slot_conflicts_with_bookings,
     slot_lock_keys,
 )
+from app.services.storage import build_s3_client, build_s3_object_url
 from app.services.teacher_search import search_teacher_ids, sync_teacher_document_by_id
 from app.schemas.teacher import (
     AddSubjectRequest,
@@ -413,19 +413,14 @@ _DOCUMENT_ACCESS_TTL_SECONDS = 900
 
 def _upload_to_s3(key: str, data: bytes, content_type: str) -> str:
     """Synchronous S3 upload — run via asyncio.to_thread."""
-    s3 = boto3.client(
-        "s3",
-        region_name=settings.AWS_REGION,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None,
-    )
+    s3 = build_s3_client()
     s3.put_object(
         Bucket=settings.AWS_S3_BUCKET,
         Key=key,
         Body=data,
         ContentType=content_type,
     )
-    return f"https://{settings.AWS_S3_BUCKET}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"
+    return build_s3_object_url(key)
 
 
 def _sync_profile_verification_state(profile: TeacherProfile) -> None:

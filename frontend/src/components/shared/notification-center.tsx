@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { BellIcon, CheckCheckIcon } from "lucide-react";
-import type { NotificationItem, NotificationPreferences } from "@/types";
+import type {
+  NotificationDeliveryItem,
+  NotificationItem,
+  NotificationPreferences,
+  PushConfiguration,
+  PushSubscriptionPayload,
+} from "@/types";
 import { apiClient } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,7 +43,7 @@ const PREFERENCE_ROWS = [
   {
     key: "pushEnabled",
     label: "Push notifications",
-    description: "Reserved for a future push delivery channel.",
+    description: "Enable browser alerts on this device for lessons, payouts, refunds, and reviews.",
   },
 ] as const;
 
@@ -53,6 +59,93 @@ function formatTimestamp(value: string) {
   }).format(new Date(value));
 }
 
+function browserSupportsPushNotifications() {
+  return (
+    typeof window !== "undefined" &&
+    "Notification" in window &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window
+  );
+}
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const normalized = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(normalized);
+  const output = new Uint8Array(raw.length);
+
+  for (let index = 0; index < raw.length; index += 1) {
+    output[index] = raw.charCodeAt(index);
+  }
+
+  return output;
+}
+
+async function ensurePushSubscription(publicKey: string): Promise<PushSubscriptionPayload> {
+  if (!browserSupportsPushNotifications()) {
+    throw new Error("This browser does not support push notifications.");
+  }
+
+  if (!publicKey) {
+    throw new Error("Push notifications are not configured for this environment yet.");
+  }
+
+  const permission = await window.Notification.requestPermission();
+  if (permission !== "granted") {
+    throw new Error(
+      permission === "denied"
+        ? "Browser notifications are blocked. Allow them in your browser settings first."
+        : "Browser notification permission was not granted."
+    );
+  }
+
+  const registration = await navigator.serviceWorker.register("/push-sw.js");
+  await navigator.serviceWorker.ready;
+
+  const existingSubscription = await registration.pushManager.getSubscription();
+  const subscription =
+    existingSubscription ??
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    }));
+
+  const serialized = subscription.toJSON();
+  if (!serialized.endpoint || !serialized.keys?.p256dh || !serialized.keys?.auth) {
+    throw new Error("Could not read the browser push subscription.");
+  }
+
+  return {
+    endpoint: serialized.endpoint,
+    expirationTime:
+      typeof serialized.expirationTime === "number"
+        ? new Date(serialized.expirationTime).toISOString()
+        : null,
+    keys: {
+      p256dh: serialized.keys.p256dh,
+      auth: serialized.keys.auth,
+    },
+  };
+}
+
+async function unsubscribeBrowserPush(): Promise<string | null> {
+  if (!browserSupportsPushNotifications()) {
+    return null;
+  }
+
+  const registration =
+    (await navigator.serviceWorker.getRegistration("/push-sw.js")) ??
+    (await navigator.serviceWorker.getRegistration());
+  const subscription = await registration?.pushManager.getSubscription();
+  if (!subscription) {
+    return null;
+  }
+
+  const endpoint = subscription.endpoint;
+  await subscription.unsubscribe();
+  return endpoint;
+}
+
 export function NotificationCenter() {
   const user = useAuthStore((state) => state.user);
   const [open, setOpen] = useState(false);
@@ -61,10 +154,18 @@ export function NotificationCenter() {
   const [markingAllRead, setMarkingAllRead] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [deliveries, setDeliveries] = useState<NotificationDeliveryItem[]>([]);
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
+  const [pushConfig, setPushConfig] = useState<PushConfiguration | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushSupported, setPushSupported] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setPushSupported(browserSupportsPushNotifications());
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -109,16 +210,25 @@ export function NotificationCenter() {
       setLoading(true);
       setError(null);
       try {
-        const [notificationsResponse, preferencesResponse] = await Promise.all([
+        const [
+          notificationsResponse,
+          deliveriesResponse,
+          preferencesResponse,
+          pushConfigResponse,
+        ] = await Promise.all([
           apiClient.notifications.list(),
+          apiClient.notifications.listDeliveries(),
           apiClient.notifications.getPreferences(),
+          apiClient.notifications.getPushConfig(),
         ]);
         if (cancelled) {
           return;
         }
         setNotifications((notificationsResponse.data as { items: NotificationItem[] }).items);
         setUnreadCount((notificationsResponse.data as { unreadCount: number }).unreadCount ?? 0);
+        setDeliveries((deliveriesResponse.data as { items: NotificationDeliveryItem[] }).items ?? []);
         setPreferences(preferencesResponse.data as NotificationPreferences);
+        setPushConfig(pushConfigResponse.data as PushConfiguration);
       } catch (err: unknown) {
         if (!cancelled) {
           setError(getErrorMessage(err, "Could not load notifications right now."));
@@ -195,6 +305,57 @@ export function NotificationCenter() {
     );
   }
 
+  async function handlePushToggle() {
+    if (!preferences) {
+      return;
+    }
+
+    setPushBusy(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      if (preferences.pushEnabled) {
+        const endpoint = await unsubscribeBrowserPush();
+        if (endpoint) {
+          await apiClient.notifications.unsubscribePush(endpoint);
+        }
+        const { data } = await apiClient.notifications.updatePreferences({ pushEnabled: false });
+        setPreferences(data as NotificationPreferences);
+        setPushConfig((current) =>
+          current
+            ? {
+                ...current,
+                subscribed: false,
+              }
+            : current
+        );
+        setMessage("Push notifications disabled for this browser.");
+        return;
+      }
+
+      const { data: configData } = await apiClient.notifications.getPushConfig();
+      const config = configData as PushConfiguration;
+      if (!config.configured || !config.publicKey) {
+        throw new Error("Push notifications are not configured for this environment yet.");
+      }
+
+      const subscription = await ensurePushSubscription(config.publicKey);
+      await apiClient.notifications.subscribePush(subscription);
+      const { data } = await apiClient.notifications.updatePreferences({ pushEnabled: true });
+      setPreferences(data as NotificationPreferences);
+      setPushConfig({
+        ...config,
+        subscribed: true,
+      });
+      setMessage("Push notifications enabled for this browser.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Could not update push notifications right now."));
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
   async function handleSavePreferences() {
     if (!preferences) {
       return;
@@ -244,6 +405,7 @@ export function NotificationCenter() {
               Inbox
               {unreadCount > 0 && <Badge variant="secondary">{unreadCount}</Badge>}
             </TabsTrigger>
+            <TabsTrigger value="delivery">Delivery</TabsTrigger>
             <TabsTrigger value="preferences">Preferences</TabsTrigger>
           </TabsList>
 
@@ -330,12 +492,67 @@ export function NotificationCenter() {
             </ScrollArea>
           </TabsContent>
 
+          <TabsContent value="delivery" className="space-y-4 px-4 pb-4 pt-4">
+            <ScrollArea className="h-[22rem] pr-3">
+              <div className="space-y-3">
+                {loading ? (
+                  <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
+                    Loading delivery activity…
+                  </div>
+                ) : deliveries.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm text-muted-foreground">
+                    No delivery activity yet. In-app, email, SMS, and push outcomes will appear here.
+                  </div>
+                ) : (
+                  deliveries.map((delivery) => (
+                    <div
+                      key={delivery.id}
+                      className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{delivery.title}</p>
+                        <Badge variant="outline">{delivery.channel.toUpperCase()}</Badge>
+                        <Badge
+                          variant={
+                            delivery.status === "delivered"
+                              ? "secondary"
+                              : delivery.status === "skipped"
+                                ? "outline"
+                                : "destructive"
+                          }
+                        >
+                          {delivery.status}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground">{delivery.body}</p>
+                      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                        <p>{formatTimestamp(delivery.attemptedAt)}</p>
+                        {delivery.recipient && <p>Recipient: {delivery.recipient}</p>}
+                        {delivery.provider && <p>Provider: {delivery.provider}</p>}
+                        {delivery.errorMessage && <p>Error: {delivery.errorMessage}</p>}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
           <TabsContent value="preferences" className="space-y-4 px-4 pb-4 pt-4">
             <div className="space-y-3">
               {PREFERENCE_ROWS.map((preference) => {
                 const enabled = preferences?.[preference.key] ?? false;
-                const isComingSoon = preference.key === "pushEnabled";
-                const isDisabled = !preferences || preference.key === "pushEnabled";
+                const isPushPreference = preference.key === "pushEnabled";
+                const isDisabled = !preferences || pushBusy;
+                const pushUnavailable = isPushPreference && pushConfig && !pushConfig.configured;
+                const pushNotSupported = isPushPreference && pushSupported === false;
+                const pushBadgeLabel = pushUnavailable
+                  ? "Server not configured"
+                  : pushNotSupported
+                    ? "Browser unsupported"
+                    : pushConfig?.subscribed
+                      ? "Active subscription"
+                      : null;
 
                 return (
                   <div
@@ -346,18 +563,39 @@ export function NotificationCenter() {
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium">{preference.label}</p>
-                          {isComingSoon && <Badge variant="outline">Coming soon</Badge>}
+                          {pushBadgeLabel && <Badge variant="outline">{pushBadgeLabel}</Badge>}
                         </div>
                         <p className="text-sm text-muted-foreground">{preference.description}</p>
+                        {isPushPreference && (
+                          <p className="text-xs text-muted-foreground">
+                            {pushUnavailable
+                              ? "Add VAPID keys on the backend before enabling push in this environment."
+                              : pushNotSupported
+                                ? "Use a browser with service worker push support to enable this channel."
+                                : "Each browser needs its own subscription before push can be enabled."}
+                          </p>
+                        )}
                       </div>
                       <Button
                         type="button"
                         size="sm"
                         variant={enabled ? "default" : "outline"}
-                        onClick={() => togglePreference(preference.key)}
-                        disabled={isDisabled}
+                        onClick={() =>
+                          isPushPreference
+                            ? void handlePushToggle()
+                            : togglePreference(preference.key)
+                        }
+                        disabled={isDisabled || Boolean(pushUnavailable) || Boolean(pushNotSupported)}
                       >
-                        {isComingSoon ? "Coming soon" : enabled ? "Enabled" : "Off"}
+                        {isPushPreference
+                          ? pushBusy
+                            ? "Updating…"
+                            : enabled
+                              ? "Disable"
+                              : "Enable"
+                          : enabled
+                            ? "Enabled"
+                            : "Off"}
                       </Button>
                     </div>
                   </div>
@@ -369,7 +607,7 @@ export function NotificationCenter() {
               <Button
                 type="button"
                 onClick={handleSavePreferences}
-                disabled={!preferences || savingPreferences}
+                disabled={!preferences || savingPreferences || pushBusy}
               >
                 {savingPreferences ? "Saving…" : "Save preferences"}
               </Button>

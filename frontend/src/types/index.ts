@@ -82,11 +82,46 @@ export interface NotificationListResponse {
   unreadCount: number;
 }
 
+export interface NotificationDeliveryItem {
+  id: string;
+  notificationId?: string | null;
+  type: string;
+  channel: string;
+  status: "delivered" | "failed" | "skipped";
+  title: string;
+  body: string;
+  recipient?: string | null;
+  provider?: string | null;
+  metadata?: Record<string, unknown> | null;
+  errorMessage?: string | null;
+  attemptedAt: string;
+  createdAt: string;
+}
+
+export interface NotificationDeliveryListResponse {
+  items: NotificationDeliveryItem[];
+}
+
 export interface NotificationPreferences {
   inAppEnabled: boolean;
   emailEnabled: boolean;
   smsEnabled: boolean;
   pushEnabled: boolean;
+}
+
+export interface PushConfiguration {
+  configured: boolean;
+  publicKey?: string | null;
+  subscribed: boolean;
+}
+
+export interface PushSubscriptionPayload {
+  endpoint: string;
+  expirationTime?: string | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
 }
 
 export interface CurriculumOption {

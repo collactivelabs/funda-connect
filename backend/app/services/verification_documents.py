@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from urllib.parse import unquote, urlparse
 
-import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import settings
+from app.services.storage import build_s3_client
 
 REQUIRED_VERIFICATION_DOCUMENT_TYPES = (
     "id_document",
@@ -129,12 +129,7 @@ def build_document_access_url(file_url: str, *, expires_in: int = 900) -> str:
     if not key:
         return file_url
 
-    s3 = boto3.client(
-        "s3",
-        region_name=settings.AWS_REGION,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None,
-    )
+    s3 = build_s3_client()
 
     try:
         return s3.generate_presigned_url(

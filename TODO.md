@@ -61,8 +61,8 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Add notification preferences management.
 - [x] Add in-app notifications for key booking, verification, payout, and refund events.
 - [x] Add SMS delivery if still required.
-- [ ] Add push delivery if still required.
-- [ ] Add notification delivery tracking where useful.
+- [x] Add push delivery if still required.
+- [x] Add notification delivery tracking where useful.
 
 ## 7. Search And Reference Data
 

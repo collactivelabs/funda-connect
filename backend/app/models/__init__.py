@@ -3,7 +3,12 @@ from app.models.audit import AuditLog
 from app.models.booking import AvailabilitySlot, BlockedDate, Booking
 from app.models.consent import ConsentRecord
 from app.models.curriculum import Subject
-from app.models.notification import Notification, NotificationPreference
+from app.models.notification import (
+    Notification,
+    NotificationDelivery,
+    NotificationPreference,
+    PushSubscription,
+)
 from app.models.parent import Learner, ParentProfile
 from app.models.payment import Payout, Payment, VerificationDocument
 from app.models.review import Review
@@ -23,7 +28,9 @@ __all__ = [
     "BlockedDate",
     "Booking",
     "Notification",
+    "NotificationDelivery",
     "NotificationPreference",
+    "PushSubscription",
     "Payment",
     "Payout",
     "VerificationDocument",

@@ -314,6 +314,7 @@ async def register(
     verification_token = await issue_email_verification_token(user.id)
     send_email_verification_message.apply_async(
         args=[
+            str(user.id),
             user.email,
             user.first_name,
             _frontend_url(f"/verify-email?token={verification_token}"),
@@ -490,6 +491,7 @@ async def request_email_verification(
         verification_token = await issue_email_verification_token(user.id)
         send_email_verification_message.apply_async(
             args=[
+                str(user.id),
                 user.email,
                 user.first_name,
                 _frontend_url(f"/verify-email?token={verification_token}"),
@@ -549,6 +551,7 @@ async def forgot_password(
         reset_token = await issue_password_reset_token(user.id)
         send_password_reset_message.apply_async(
             args=[
+                str(user.id),
                 user.email,
                 user.first_name,
                 _frontend_url(f"/reset-password?token={reset_token}"),

@@ -170,6 +170,11 @@ SENTRY_TRACES_SAMPLE_RATE=0.0
 SENTRY_PROFILES_SAMPLE_RATE=0.0
 SENTRY_SEND_DEFAULT_PII=false
 
+# Web push (optional browser notifications)
+WEB_PUSH_PUBLIC_KEY=
+WEB_PUSH_PRIVATE_KEY=
+WEB_PUSH_SUBJECT=mailto:noreply@fundaconnect.co.za
+
 # Platform
 PLATFORM_COMMISSION_RATE=0.175     # 17.5%
 BOOKING_NO_SHOW_GRACE_MINUTES=15   # no-show reporting window after lesson start
@@ -210,6 +215,8 @@ docker compose restart backend
 - **Notification center** — in-app inbox with unread state, mark-read actions, and notification preferences
 - **Email notifications** — booking confirmation, verification result, payout processed, refund updates
 - **SMS notifications** — optional transactional SMS for key updates when a provider is configured and the user has a phone number on file
+- **Push notifications** — optional browser push delivery for key lesson, refund, payout, and verification updates
+- **Delivery activity** — recent in-app, email, SMS, and push delivery outcomes are visible from the notification center
 - **Observability** — optional Sentry error tracking plus `/health` and `/health/ready` endpoints for uptime and dependency checks
 - **Admin dashboard** — teacher verification workflow, payout status management, platform stats
 

@@ -34,6 +34,12 @@ class User(UUIDMixin, TimestampMixin, Base):
     notifications: Mapped[list["Notification"]] = relationship(  # noqa: F821
         "Notification", back_populates="user", cascade="all, delete-orphan"
     )
+    notification_deliveries: Mapped[list["NotificationDelivery"]] = relationship(  # noqa: F821
+        "NotificationDelivery", back_populates="user", cascade="all, delete-orphan"
+    )
+    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(  # noqa: F821
+        "PushSubscription", back_populates="user", cascade="all, delete-orphan"
+    )
     notification_preferences: Mapped["NotificationPreference | None"] = relationship(  # noqa: F821
         "NotificationPreference", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )

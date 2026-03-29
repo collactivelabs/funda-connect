@@ -11,10 +11,13 @@ import type {
   GoogleOAuthStartResponse,
   LearnerReport,
   LearnerProgress,
+  NotificationDeliveryListResponse,
   NotificationListResponse,
   NotificationPreferences,
   ParentPaymentHistorySummary,
   ParentPaymentReceipt,
+  PushConfiguration,
+  PushSubscriptionPayload,
   TopicReference,
 } from "@/types";
 
@@ -217,9 +220,19 @@ export const apiClient = {
   },
   notifications: {
     list: () => api.get<NotificationListResponse>("/notifications"),
+    listDeliveries: () => api.get<NotificationDeliveryListResponse>("/notifications/deliveries"),
     markRead: (notificationId: string) => api.put(`/notifications/${notificationId}/read`),
     markAllRead: () => api.put("/notifications/read-all"),
     getPreferences: () => api.get<NotificationPreferences>("/notifications/preferences"),
+    getPushConfig: () => api.get<PushConfiguration>("/notifications/push/config"),
+    subscribePush: (body: PushSubscriptionPayload) =>
+      api.post<PushConfiguration>("/notifications/push-subscriptions", {
+        endpoint: body.endpoint,
+        expiration_time: body.expirationTime,
+        keys: body.keys,
+      }),
+    unsubscribePush: (endpoint: string) =>
+      api.post<PushConfiguration>("/notifications/push-subscriptions/unsubscribe", { endpoint }),
     updatePreferences: (body: Partial<NotificationPreferences>) =>
       api.put<NotificationPreferences>("/notifications/preferences", {
         in_app_enabled: body.inAppEnabled,

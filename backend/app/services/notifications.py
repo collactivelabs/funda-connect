@@ -4,9 +4,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.notification import Notification, NotificationPreference
+from app.models.notification import Notification, NotificationDelivery, NotificationPreference
 from app.models.user import User
-from app.schemas.notification import NotificationPreferencesResponse, NotificationResponse
+from app.schemas.notification import (
+    NotificationDeliveryResponse,
+    NotificationPreferencesResponse,
+    NotificationResponse,
+)
+from app.services.push import web_push_configured
 from app.services.sms import normalize_phone_number, sms_provider_configured
 
 _DEFAULT_PREFERENCES = {
@@ -29,6 +34,26 @@ def notification_to_response(notification: Notification) -> NotificationResponse
         sent_at=notification.sent_at,
         read_at=notification.read_at,
         created_at=notification.created_at,
+    )
+
+
+def notification_delivery_to_response(
+    delivery: NotificationDelivery,
+) -> NotificationDeliveryResponse:
+    return NotificationDeliveryResponse(
+        id=delivery.id,
+        notification_id=delivery.notification_id,
+        type=delivery.type,
+        channel=delivery.channel,
+        status=delivery.status,
+        title=delivery.title,
+        body=delivery.body,
+        recipient=delivery.recipient,
+        provider=delivery.provider,
+        metadata=delivery.metadata_json,
+        error_message=delivery.error_message,
+        attempted_at=delivery.attempted_at,
+        created_at=delivery.created_at,
     )
 
 
@@ -96,6 +121,17 @@ async def create_in_app_notification(
     metadata: dict | None = None,
 ) -> Notification | None:
     if not await notifications_enabled_for_channel(db, user_id, channel="in_app"):
+        await record_notification_delivery(
+            db,
+            user_id=user_id,
+            notification_type=notification_type,
+            channel="in_app",
+            status="skipped",
+            title=title,
+            body=body,
+            metadata=metadata,
+            error_message="Channel disabled by user preferences.",
+        )
         return None
 
     notification = Notification(
@@ -110,6 +146,18 @@ async def create_in_app_notification(
     )
     db.add(notification)
     await db.flush()
+    await record_notification_delivery(
+        db,
+        user_id=user_id,
+        notification_type=notification_type,
+        channel="in_app",
+        status="delivered",
+        title=title,
+        body=body,
+        metadata=metadata,
+        notification_id=notification.id,
+        attempted_at=notification.sent_at,
+    )
     return notification
 
 
@@ -140,6 +188,56 @@ async def list_admin_user_ids(db: AsyncSession) -> list[UUID]:
     return list(result.all())
 
 
+async def list_notification_deliveries_for_user(
+    db: AsyncSession,
+    user_id: UUID,
+    *,
+    limit: int = 20,
+) -> list[NotificationDelivery]:
+    result = await db.scalars(
+        select(NotificationDelivery)
+        .where(NotificationDelivery.user_id == user_id)
+        .order_by(NotificationDelivery.attempted_at.desc(), NotificationDelivery.created_at.desc())
+        .limit(limit)
+    )
+    return result.all()
+
+
+async def record_notification_delivery(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    notification_type: str,
+    channel: str,
+    status: str,
+    title: str,
+    body: str,
+    recipient: str | None = None,
+    provider: str | None = None,
+    metadata: dict | None = None,
+    error_message: str | None = None,
+    notification_id: UUID | None = None,
+    attempted_at: datetime | None = None,
+) -> NotificationDelivery:
+    delivery = NotificationDelivery(
+        user_id=user_id,
+        notification_id=notification_id,
+        type=notification_type,
+        channel=channel,
+        status=status,
+        title=title,
+        body=body,
+        recipient=recipient,
+        provider=provider,
+        metadata_json=metadata,
+        error_message=error_message,
+        attempted_at=attempted_at or datetime.now(UTC),
+    )
+    db.add(delivery)
+    await db.flush()
+    return delivery
+
+
 def validate_notification_preference_channels(
     *,
     user: User,
@@ -157,4 +255,5 @@ def validate_notification_preference_channels(
             raise ValueError("Your saved phone number is invalid for SMS delivery.") from exc
 
     if push_enabled is True:
-        raise ValueError("Push notifications are not configured yet.")
+        if not web_push_configured():
+            raise ValueError("Push notifications are not configured for this environment yet.")

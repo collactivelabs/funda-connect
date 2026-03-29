@@ -7,7 +7,6 @@ from urllib.parse import unquote, urlparse
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import HTTPException, Request, status
 from sqlalchemy import delete, select
@@ -18,7 +17,12 @@ from app.core.config import settings
 from app.core.redis import get_redis
 from app.core.security import hash_password
 from app.models.booking import Booking
-from app.models.notification import Notification, NotificationPreference
+from app.models.notification import (
+    Notification,
+    NotificationDelivery,
+    NotificationPreference,
+    PushSubscription,
+)
 from app.models.parent import Learner, ParentProfile
 from app.models.payment import Payment, Refund, VerificationDocument
 from app.models.review import Review
@@ -29,6 +33,7 @@ from app.services.auth_tokens import revoke_all_refresh_sessions
 from app.services.notifications import create_in_app_notification
 from app.services.prepaid_series import recurring_weeks_from_metadata
 from app.services.scheduling import booking_occurrence_starts, release_slot_hold, slot_lock_keys
+from app.services.storage import build_s3_client
 from app.services.video import delete_room
 
 DELETION_GRACE_DAYS = 30
@@ -90,12 +95,7 @@ def _file_key_from_url(file_url: str | None) -> str | None:
 
 
 def _delete_s3_object(key: str) -> None:
-    s3 = boto3.client(
-        "s3",
-        region_name=settings.AWS_REGION,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None,
-    )
+    s3 = build_s3_client()
     s3.delete_object(Bucket=settings.AWS_S3_BUCKET, Key=key)
 
 
@@ -380,6 +380,38 @@ def _serialize_notification_preferences(preferences: NotificationPreference | No
     }
 
 
+def _serialize_notification_delivery(delivery: NotificationDelivery) -> dict:
+    return {
+        "id": str(delivery.id),
+        "notification_id": str(delivery.notification_id) if delivery.notification_id else None,
+        "type": delivery.type,
+        "channel": delivery.channel,
+        "status": delivery.status,
+        "title": delivery.title,
+        "body": delivery.body,
+        "recipient": delivery.recipient,
+        "provider": delivery.provider,
+        "metadata": delivery.metadata_json,
+        "error_message": delivery.error_message,
+        "attempted_at": delivery.attempted_at,
+        "created_at": delivery.created_at,
+        "updated_at": delivery.updated_at,
+    }
+
+
+def _serialize_push_subscription(subscription: PushSubscription) -> dict:
+    return {
+        "id": str(subscription.id),
+        "endpoint": subscription.endpoint,
+        "expiration_time": subscription.expiration_time,
+        "user_agent": subscription.user_agent,
+        "last_used_at": subscription.last_used_at,
+        "is_active": subscription.is_active,
+        "created_at": subscription.created_at,
+        "updated_at": subscription.updated_at,
+    }
+
+
 async def _load_user_for_export(db: AsyncSession, user_id: UUID) -> User | None:
     return await db.scalar(
         select(User)
@@ -392,7 +424,9 @@ async def _load_user_for_export(db: AsyncSession, user_id: UUID) -> User | None:
             selectinload(User.teacher_profile).selectinload(TeacherProfile.documents),
             selectinload(User.teacher_profile).selectinload(TeacherProfile.availability_slots),
             selectinload(User.notifications),
+            selectinload(User.notification_deliveries),
             selectinload(User.notification_preferences),
+            selectinload(User.push_subscriptions),
         )
     )
 
@@ -441,7 +475,13 @@ async def export_account_data(db: AsyncSession, user_id: UUID) -> dict[str, obje
         "teacher_profile": _serialize_teacher_profile(user.teacher_profile),
         "bookings": [_serialize_booking(booking) for booking in bookings],
         "notifications": [_serialize_notification(notification) for notification in user.notifications],
+        "notification_deliveries": [
+            _serialize_notification_delivery(delivery) for delivery in user.notification_deliveries
+        ],
         "notification_preferences": _serialize_notification_preferences(user.notification_preferences),
+        "push_subscriptions": [
+            _serialize_push_subscription(subscription) for subscription in user.push_subscriptions
+        ],
     }
 
 
@@ -704,6 +744,8 @@ async def anonymize_user_account(db: AsyncSession, user: User) -> bool:
             document.reviewer_notes = None
 
     await _delete_stored_file(user.avatar_url)
+    await db.execute(delete(PushSubscription).where(PushSubscription.user_id == user.id))
+    await db.execute(delete(NotificationDelivery).where(NotificationDelivery.user_id == user.id))
     await db.execute(delete(Notification).where(Notification.user_id == user.id))
     await db.execute(delete(NotificationPreference).where(NotificationPreference.user_id == user.id))
 

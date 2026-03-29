@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     SENTRY_PROFILES_SAMPLE_RATE: float = 0.0
     SENTRY_SEND_DEFAULT_PII: bool = False
 
+    # Web push
+    WEB_PUSH_PUBLIC_KEY: str = ""
+    WEB_PUSH_PRIVATE_KEY: str = ""
+    WEB_PUSH_SUBJECT: str = "mailto:noreply@fundaconnect.co.za"
+
     # JWT
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"

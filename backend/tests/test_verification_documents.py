@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
+from app.services import verification_documents
 from app.services.verification_documents import (
+    build_document_access_url,
     derive_teacher_verification_status,
     get_missing_required_document_types,
     get_rejected_required_document_types,
@@ -96,3 +98,29 @@ def test_document_counts_group_by_review_status():
         "pending": 2,
         "rejected": 1,
     }
+
+
+def test_build_document_access_url_uses_regional_s3_endpoint(monkeypatch):
+    class FakeS3Client:
+        def generate_presigned_url(self, operation_name, *, Params, ExpiresIn):
+            assert operation_name == "get_object"
+            assert Params["Bucket"] == verification_documents.settings.AWS_S3_BUCKET
+            assert Params["Key"] == "documents/teacher/doc.pdf"
+            assert ExpiresIn == 900
+            return (
+                "https://"
+                f"{verification_documents.settings.AWS_S3_BUCKET}.s3."
+                f"{verification_documents.settings.AWS_REGION}.amazonaws.com/documents/teacher/doc.pdf"
+                "?X-Amz-SignedHeaders=host"
+            )
+
+    monkeypatch.setattr(verification_documents, "build_s3_client", lambda: FakeS3Client())
+
+    url = build_document_access_url(
+        f"https://{verification_documents.settings.AWS_S3_BUCKET}.s3."
+        f"{verification_documents.settings.AWS_REGION}.amazonaws.com/documents/teacher/doc.pdf",
+        expires_in=900,
+    )
+
+    assert ".s3.af-south-1.amazonaws.com/" in url
+    assert ".s3.amazonaws.com/" not in url
