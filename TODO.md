@@ -86,7 +86,7 @@ This file tracks outstanding work identified by comparing the original technical
 - [ ] Update technical docs to reflect the actual project stage instead of `Pre-Development` / `Draft`.
 - [ ] Align docs with the current implementation details and route surface.
 - [ ] Add production deployment/infra definitions if they are still intended to live in this repo.
-- [ ] Add monitoring/observability setup if still in scope.
+- [x] Add monitoring/observability setup if still in scope.
 - [ ] Decide whether the planned mobile app remains active scope or is a later-phase item.
 
 ## Notes

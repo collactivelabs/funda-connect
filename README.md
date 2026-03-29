@@ -78,6 +78,8 @@ Once complete:
 | Frontend | http://localhost:3001 |
 | Backend API | http://localhost:8000 |
 | API docs (Swagger) | http://localhost:8000/docs |
+| Health | http://localhost:8000/health |
+| Readiness | http://localhost:8000/health/ready |
 | Celery Flower | http://localhost:5555 |
 
 ### Common commands
@@ -154,6 +156,14 @@ EMAIL_FROM=noreply@fundaconnect.co.za
 # Meilisearch
 MEILISEARCH_MASTER_KEY=
 
+# Observability (optional)
+SENTRY_DSN=
+SENTRY_ENVIRONMENT=               # Defaults to ENVIRONMENT when blank
+SENTRY_RELEASE=
+SENTRY_TRACES_SAMPLE_RATE=0.0
+SENTRY_PROFILES_SAMPLE_RATE=0.0
+SENTRY_SEND_DEFAULT_PII=false
+
 # Platform
 PLATFORM_COMMISSION_RATE=0.175     # 17.5%
 BOOKING_NO_SHOW_GRACE_MINUTES=15   # no-show reporting window after lesson start
@@ -193,6 +203,7 @@ docker compose restart backend
 - **Weekly payouts** — Celery Beat batches teacher payouts every Monday
 - **Notification center** — in-app inbox with unread state, mark-read actions, and notification preferences
 - **Email notifications** — booking confirmation, verification result, payout processed, refund updates
+- **Observability** — optional Sentry error tracking plus `/health` and `/health/ready` endpoints for uptime and dependency checks
 - **Admin dashboard** — teacher verification workflow, payout status management, platform stats
 
 ---

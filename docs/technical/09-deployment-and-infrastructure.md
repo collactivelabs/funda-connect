@@ -307,6 +307,11 @@ South Africa's load-shedding is a key operational risk. Mitigation strategies:
 
 ### 6.1 Application Monitoring
 
+Current repo implementation as of March 29, 2026:
+- FastAPI exposes `/health` for liveness and `/health/ready` for dependency readiness checks (database, Redis, Meilisearch)
+- Sentry is wired for the API and Celery when `SENTRY_DSN` is configured
+- Flower is available for Celery task visibility in local development
+
 | Tool | Purpose |
 |------|---------|
 | **Sentry** | Error tracking, performance monitoring, release tracking |

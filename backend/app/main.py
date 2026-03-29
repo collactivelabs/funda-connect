@@ -1,14 +1,18 @@
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.redis import close_redis
+from app.services.observability import build_readiness_report, init_sentry
 from app.services.teacher_search import rebuild_teacher_search_index
 
 logger = structlog.get_logger()
+
+init_sentry(component="api")
 
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -53,6 +57,13 @@ async def add_security_headers(request, call_next):
 @app.get("/health", tags=["health"])
 async def health_check():
     return {"status": "ok", "environment": settings.ENVIRONMENT}
+
+
+@app.get("/health/ready", tags=["health"])
+async def readiness_check():
+    report = await build_readiness_report()
+    status_code = 200 if report["status"] == "ok" else 503
+    return JSONResponse(status_code=status_code, content=report)
 
 
 @app.on_event("startup")

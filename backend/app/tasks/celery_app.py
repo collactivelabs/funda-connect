@@ -1,6 +1,9 @@
 from celery import Celery
 
 from app.core.config import settings
+from app.services.observability import init_sentry
+
+init_sentry(component="celery")
 
 celery_app = Celery(
     "fundaconnect",

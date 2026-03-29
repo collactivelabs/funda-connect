@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     MEILISEARCH_URL: str = "http://localhost:7700"
     MEILISEARCH_MASTER_KEY: str = "masterKey"
 
+    # Observability
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = ""
+    SENTRY_RELEASE: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+    SENTRY_PROFILES_SAMPLE_RATE: float = 0.0
+    SENTRY_SEND_DEFAULT_PII: bool = False
+
     # JWT
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
