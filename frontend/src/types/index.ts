@@ -21,6 +21,10 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface GoogleOAuthStartResponse {
+  authorizationUrl: string;
+}
+
 export interface AuthSession {
   id: string;
   current: boolean;

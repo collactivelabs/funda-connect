@@ -7,10 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { GoogleAuthButton } from "@/components/auth/google-auth-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiClient } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth.store";
-import type { AuthResponse } from "@/types";
+import type { AuthResponse, GoogleOAuthStartResponse } from "@/types";
+
+function getSafeRedirectPath(value: string | null): string | undefined {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return undefined;
+  }
+  return value;
+}
 
 export function RegisterForm() {
   const router = useRouter();
@@ -18,6 +26,7 @@ export function RegisterForm() {
   const { setUser, setAccessToken } = useAuthStore();
 
   const initialRole: "parent" | "teacher" = params.get("role") === "teacher" ? "teacher" : "parent";
+  const redirectPath = getSafeRedirectPath(params.get("redirect"));
   const [role, setRole] = useState<"parent" | "teacher">(initialRole);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -30,6 +39,7 @@ export function RegisterForm() {
   const [marketingSms, setMarketingSms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -56,6 +66,36 @@ export function RegisterForm() {
       setError(detail ?? "Registration failed. Please try again.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGoogleRegistration() {
+    if (!acceptTerms) {
+      setError("Please accept the Terms of Service before continuing with Google.");
+      return;
+    }
+    if (!acceptPrivacyPolicy) {
+      setError("Please accept the Privacy Policy before continuing with Google.");
+      return;
+    }
+
+    setError(null);
+    setGoogleLoading(true);
+    try {
+      const { data } = await apiClient.auth.startGoogle({
+        flow: "register",
+        role,
+        redirect_path: redirectPath,
+        accept_terms: acceptTerms,
+        accept_privacy_policy: acceptPrivacyPolicy,
+        marketing_email: marketingEmail,
+        marketing_sms: marketingSms,
+      }) as { data: GoogleOAuthStartResponse };
+      window.location.assign(data.authorizationUrl);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(detail ?? "Google sign-up is unavailable right now. Please try again.");
+      setGoogleLoading(false);
     }
   }
 
@@ -192,7 +232,22 @@ export function RegisterForm() {
         </label>
       </div>
 
-      <Button type="submit" className="w-full" disabled={loading}>
+      <GoogleAuthButton
+        label={googleLoading ? "Opening Google…" : `Continue with Google as ${role}`}
+        onClick={handleGoogleRegistration}
+        disabled={loading || googleLoading}
+      />
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-border/70" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          <span className="bg-background px-2">Or</span>
+        </div>
+      </div>
+
+      <Button type="submit" className="w-full" disabled={loading || googleLoading}>
         {loading ? "Creating account…" : `Create ${role} account`}
       </Button>
 

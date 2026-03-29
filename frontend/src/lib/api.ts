@@ -5,8 +5,10 @@ import type {
   AccountDataExportResponse,
   AccountDeletionStatus,
   AuthSession,
+  AuthResponse,
   CurriculumOption,
   GradeLevelGroup,
+  GoogleOAuthStartResponse,
   NotificationListResponse,
   NotificationPreferences,
   ParentPaymentHistorySummary,
@@ -36,8 +38,19 @@ export const api = axios.create({
   withCredentials: true, // send HttpOnly refresh token cookie
 });
 
+const authApi = axios.create({
+  baseURL: `${API_URL}/api/v1`,
+  headers: { "Content-Type": "application/json" },
+  withCredentials: true,
+});
+
 // Transform all response data from snake_case to camelCase
 api.interceptors.response.use((res) => {
+  if (res.data) res.data = transformKeys(res.data);
+  return res;
+});
+
+authApi.interceptors.response.use((res) => {
   if (res.data) res.data = transformKeys(res.data);
   return res;
 });
@@ -82,6 +95,8 @@ export const apiClient = {
   auth: {
     register: (body: unknown) => api.post("/auth/register", body),
     login: (body: unknown) => api.post("/auth/login", body),
+    startGoogle: (body: unknown) => authApi.post<GoogleOAuthStartResponse>("/auth/google/start", body),
+    refreshSession: () => authApi.post<AuthResponse>("/auth/refresh"),
     listSessions: () => api.get<AuthSession[]>("/auth/sessions"),
     revokeSession: (sessionId: string) => api.delete(`/auth/sessions/${sessionId}`),
     revokeOtherSessions: () => api.post("/auth/sessions/revoke-others"),

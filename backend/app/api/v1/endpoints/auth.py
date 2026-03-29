@@ -1,6 +1,8 @@
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,8 @@ from app.models.user import User
 from app.schemas.auth import (
     AuthResponse,
     EmailRequest,
+    GoogleOAuthStartRequest,
+    GoogleOAuthStartResponse,
     LoginRequest,
     MessageResponse,
     RegisterRequest,
@@ -44,6 +48,15 @@ from app.tasks.notifications import (
     send_password_reset_message,
 )
 from app.services.consent import record_registration_consents
+from app.services.google_oauth import (
+    GoogleOAuthFlowError,
+    GoogleOAuthState,
+    build_google_authorization_url,
+    consume_google_oauth_state,
+    exchange_google_code_for_profile,
+    issue_google_oauth_state,
+    resolve_google_oauth_user,
+)
 from app.services.rate_limits import (
     AUTH_FORGOT_PASSWORD_RATE_LIMIT,
     AUTH_LOGIN_RATE_LIMIT,
@@ -72,6 +85,26 @@ def _cookie_options() -> dict:
 
 def _frontend_url(path: str) -> str:
     return f"{settings.APP_BASE_URL.rstrip('/')}{path}"
+
+
+def _oauth_complete_url(
+    *,
+    redirect_path: str | None = None,
+    error: str | None = None,
+    flow: str | None = None,
+) -> str:
+    query: dict[str, str] = {}
+    if redirect_path:
+        query["redirect"] = redirect_path
+    if error:
+        query["error"] = error
+    if flow:
+        query["flow"] = flow
+
+    suffix = "/oauth/complete"
+    if query:
+        suffix = f"{suffix}?{urlencode(query)}"
+    return _frontend_url(suffix)
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -136,6 +169,101 @@ async def _enforce_auth_rate_limit(
         identifier=build_rate_limit_identifier(request, *identifier_parts),
         detail=detail,
     )
+
+
+@router.post("/google/start", response_model=GoogleOAuthStartResponse)
+async def start_google_oauth(body: GoogleOAuthStartRequest, request: Request):
+    """Build a Google OAuth authorization URL for login or registration."""
+    await _enforce_auth_rate_limit(
+        request,
+        rate_limit=AUTH_REGISTER_RATE_LIMIT if body.flow == "register" else AUTH_LOGIN_RATE_LIMIT,
+        identifier_parts=(body.flow, body.role or ""),
+        detail="Too many Google sign-in attempts. Please try again shortly.",
+    )
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google sign-in is not configured yet.",
+        )
+
+    state_token = await issue_google_oauth_state(
+        GoogleOAuthState(
+            flow=body.flow,
+            role=body.role,
+            redirect_path=body.redirect_path,
+            marketing_email=body.marketing_email,
+            marketing_sms=body.marketing_sms,
+        )
+    )
+    return GoogleOAuthStartResponse(
+        authorization_url=build_google_authorization_url(state_token),
+    )
+
+
+@router.get("/google/callback")
+async def google_oauth_callback(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    """Handle Google's OAuth callback and bootstrap a normal session."""
+    if error:
+        flow = None
+        if state:
+            oauth_state = await consume_google_oauth_state(state)
+            flow = oauth_state.flow if oauth_state is not None else None
+        error_code = "cancelled" if error == "access_denied" else "oauth_failed"
+        return RedirectResponse(
+            url=_oauth_complete_url(error=error_code, flow=flow),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    if not code or not state:
+        return RedirectResponse(
+            url=_oauth_complete_url(error="invalid_callback"),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    oauth_state = await consume_google_oauth_state(state)
+    if oauth_state is None:
+        return RedirectResponse(
+            url=_oauth_complete_url(error="expired_state"),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        profile = await exchange_google_code_for_profile(code)
+        user = await resolve_google_oauth_user(
+            db,
+            request=request,
+            oauth_state=oauth_state,
+            profile=profile,
+        )
+    except GoogleOAuthFlowError as exc:
+        await db.rollback()
+        return RedirectResponse(
+            url=_oauth_complete_url(error=exc.code, flow=oauth_state.flow),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    except ValueError:
+        await db.rollback()
+        return RedirectResponse(
+            url=_oauth_complete_url(error="oauth_failed", flow=oauth_state.flow),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    await db.commit()
+    await db.refresh(user)
+
+    tokens = await _build_auth_response(user, request)
+    response = RedirectResponse(
+        url=_oauth_complete_url(redirect_path=oauth_state.redirect_path),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    _set_refresh_cookie(response, tokens["refresh_token"])
+    return response
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=AuthResponse)

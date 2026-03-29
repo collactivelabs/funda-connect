@@ -24,7 +24,7 @@ This file tracks outstanding work identified by comparing the original technical
 
 - [x] Add email verification flow.
 - [x] Add forgot-password and reset-password flow.
-- [ ] Add Google OAuth login.
+- [x] Add Google OAuth login.
 - [x] Replace simple stateless refresh handling with rotation and reuse detection.
 - [x] Add session listing and session revocation support.
 

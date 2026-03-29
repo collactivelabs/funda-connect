@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator, model_validator
 
 
 class RegisterRequest(BaseModel):
@@ -51,6 +51,37 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleOAuthStartRequest(BaseModel):
+    flow: Literal["login", "register"]
+    role: Literal["parent", "teacher"] | None = None
+    redirect_path: str | None = None
+    accept_terms: bool = False
+    accept_privacy_policy: bool = False
+    marketing_email: bool = False
+    marketing_sms: bool = False
+
+    @field_validator("redirect_path")
+    @classmethod
+    def redirect_path_must_be_relative(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        path = value.strip()
+        if not path.startswith("/") or path.startswith("//"):
+            raise ValueError("Redirect path must be a relative path")
+        return path
+
+    @model_validator(mode="after")
+    def validate_flow_requirements(self):
+        if self.flow == "register":
+            if self.role is None:
+                raise ValueError("Role is required when registering with Google")
+            if self.accept_terms is not True:
+                raise ValueError("Terms of service must be accepted")
+            if self.accept_privacy_policy is not True:
+                raise ValueError("Privacy policy must be accepted")
+        return self
+
+
 class EmailRequest(BaseModel):
     email: EmailStr
 
@@ -92,6 +123,10 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class GoogleOAuthStartResponse(BaseModel):
+    authorization_url: str
 
 
 class MessageResponse(BaseModel):

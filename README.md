@@ -120,6 +120,11 @@ JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
 EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS=24
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=60
 APP_BASE_URL=http://localhost:3001
+API_BASE_URL=http://localhost:8000
+
+# Google OAuth
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 
 # PayFast
 PAYFAST_MERCHANT_ID=
@@ -223,6 +228,6 @@ Recurring bookings: the root booking goes through PayFast. On payment confirmati
 
 - Email verification links are sent on registration and can be resent from the dashboard while an account is still unverified.
 - Password reset links can be requested from `/forgot-password`, with resets completed on `/reset-password`.
+- Google OAuth now supports both sign-in and role-aware registration from the auth screens, with the session completed on `/oauth/complete` after the backend callback sets the refresh cookie.
 - Refresh tokens now rotate with reuse detection, and signed-in users can review or revoke active sessions from the dashboard.
-- Password reset is available via `/forgot-password` and `/reset-password`.
-- Refresh tokens now rotate on `/auth/refresh` and are revoked on logout or password reset.
+- Refresh tokens rotate on `/auth/refresh` and are revoked on logout or password reset.

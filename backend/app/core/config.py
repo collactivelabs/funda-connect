@@ -16,6 +16,10 @@ class Settings(BaseSettings):
         default="http://localhost:3001",
         validation_alias=AliasChoices("APP_BASE_URL", "NEXT_PUBLIC_APP_URL"),
     )
+    API_BASE_URL: str = Field(
+        default="http://localhost:8000",
+        validation_alias=AliasChoices("API_BASE_URL", "NEXT_PUBLIC_API_URL"),
+    )
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://fundaconnect:fundaconnect@localhost:5432/fundaconnect"
@@ -43,6 +47,7 @@ class Settings(BaseSettings):
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_OAUTH_STATE_EXPIRE_MINUTES: int = 15
 
     # PayFast
     PAYFAST_MERCHANT_ID: str = ""

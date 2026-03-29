@@ -108,15 +108,16 @@ async def refresh_token(token: str):
 ### 3.2 Google OAuth 2.0
 
 ```
-1. Client redirects to Google OAuth consent screen
-2. User grants consent → Google redirects back with auth code
-3. Client sends auth code to POST /auth/google
-4. Server exchanges code for Google tokens
-5. Server fetches Google user profile (email, name, avatar)
-6. Server checks if email exists:
-   - Yes: Link Google account, issue tokens
-   - No: Create new user, issue tokens
-7. Server returns access + refresh tokens
+1. Client requests POST /auth/google/start with flow metadata (login or register)
+2. Server stores one-time OAuth state in Redis and returns the Google authorization URL
+3. User grants consent → Google redirects back to GET /auth/google/callback with auth code + state
+4. Server validates and consumes state, exchanges the auth code for Google tokens, and fetches Google user profile
+5. Server checks if email exists:
+   - Login flow + existing account: sign in and mark email verified
+   - Register flow + missing account: create a role-specific user and issue session cookies
+   - Any mismatch (missing account, existing account on register, disabled user): redirect to frontend with an error code
+6. Server sets the refresh cookie and redirects to /oauth/complete
+7. Frontend calls /auth/refresh to bootstrap the in-memory access token and user state
 ```
 
 ---
