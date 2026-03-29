@@ -12,6 +12,10 @@ class RegisterRequest(BaseModel):
     last_name: str
     role: Literal["parent", "teacher"]
     phone: str | None = None
+    accept_terms: bool
+    accept_privacy_policy: bool
+    marketing_email: bool = False
+    marketing_sms: bool = False
 
     @field_validator("password")
     @classmethod
@@ -26,6 +30,20 @@ class RegisterRequest(BaseModel):
         if not v.strip():
             raise ValueError("Name cannot be empty")
         return v.strip()
+
+    @field_validator("accept_terms")
+    @classmethod
+    def terms_must_be_accepted(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("Terms of service must be accepted")
+        return v
+
+    @field_validator("accept_privacy_policy")
+    @classmethod
+    def privacy_policy_must_be_accepted(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("Privacy policy must be accepted")
+        return v
 
 
 class LoginRequest(BaseModel):

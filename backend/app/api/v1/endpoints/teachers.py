@@ -5,7 +5,7 @@ from uuid import UUID
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -47,6 +47,14 @@ from app.schemas.teacher import (
     VerificationDocumentResponse,
 )
 from app.services.notifications import create_in_app_notifications, list_admin_user_ids
+from app.services.audit import create_audit_log
+from app.services.file_validation import UploadValidationError, validate_upload
+from app.services.malware_scan import scan_upload_for_malware
+from app.services.rate_limits import (
+    TEACHER_UPLOAD_RATE_LIMIT,
+    build_rate_limit_identifier,
+    enforce_rate_limit,
+)
 from app.services.verification_documents import (
     build_document_access_url,
     derive_teacher_verification_status,
@@ -299,6 +307,7 @@ async def list_my_documents(
 @router.get("/me/documents/{document_id}/access", response_model=DocumentAccessResponse)
 async def get_my_document_access(
     document_id: UUID,
+    request: Request,
     payload: dict = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
@@ -306,6 +315,21 @@ async def get_my_document_access(
     document = await db.get(VerificationDocument, document_id)
     if not document or document.teacher_id != profile.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    await create_audit_log(
+        db,
+        action="verification_document.access",
+        resource_type="verification_document",
+        resource_id=document.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "teacher_id": profile.id,
+            "document_type": document.document_type,
+            "scope": "self",
+        },
+    )
     return _document_access_response(document)
 
 
@@ -316,11 +340,18 @@ async def get_my_document_access(
 )
 async def upload_document(
     document_type: str,
+    request: Request,
     file: UploadFile = File(...),
     payload: dict = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a verification document (ID, qualification, etc.) to S3."""
+    await enforce_rate_limit(
+        request,
+        rate_limit=TEACHER_UPLOAD_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many document upload attempts. Please try again later.",
+    )
     if document_type not in _ALLOWED_DOC_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -328,20 +359,33 @@ async def upload_document(
         )
 
     data = await file.read()
-    if len(data) > _MAX_FILE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File exceeds 10 MB limit",
+    try:
+        validated_upload = validate_upload(
+            data=data,
+            filename=file.filename,
+            content_type=file.content_type,
+            max_file_bytes=_MAX_FILE_BYTES,
         )
+    except UploadValidationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.detail,
+        ) from exc
+
+    try:
+        scan_upload_for_malware(data, filename=validated_upload.file_name)
+    except UploadValidationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.detail,
+        ) from exc
 
     profile = await _get_my_profile(payload, db)
 
-    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
-    key = f"documents/{profile.id}/{document_type}/{uuid_lib.uuid4()}.{ext}"
-    content_type = file.content_type or "application/octet-stream"
+    key = f"documents/{profile.id}/{document_type}/{uuid_lib.uuid4()}.{validated_upload.extension}"
 
     try:
-        file_url = await asyncio.to_thread(_upload_to_s3, key, data, content_type)
+        file_url = await asyncio.to_thread(_upload_to_s3, key, data, validated_upload.content_type)
     except (BotoCoreError, ClientError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -352,10 +396,25 @@ async def upload_document(
         teacher_id=profile.id,
         document_type=document_type,
         file_url=file_url,
-        file_name=file.filename or key.split("/")[-1],
+        file_name=validated_upload.file_name,
     )
     db.add(doc)
     await db.flush()
+    await create_audit_log(
+        db,
+        action="verification_document.upload",
+        resource_type="verification_document",
+        resource_id=doc.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "teacher_id": profile.id,
+            "document_type": document_type,
+            "file_name": validated_upload.file_name,
+            "content_type": validated_upload.content_type,
+        },
+    )
     documents_result = await db.scalars(
         select(VerificationDocument)
         .where(VerificationDocument.teacher_id == profile.id)

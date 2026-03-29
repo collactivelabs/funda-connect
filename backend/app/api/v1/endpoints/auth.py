@@ -43,6 +43,18 @@ from app.tasks.notifications import (
     send_email_verification_message,
     send_password_reset_message,
 )
+from app.services.consent import record_registration_consents
+from app.services.rate_limits import (
+    AUTH_FORGOT_PASSWORD_RATE_LIMIT,
+    AUTH_LOGIN_RATE_LIMIT,
+    AUTH_REFRESH_RATE_LIMIT,
+    AUTH_REGISTER_RATE_LIMIT,
+    AUTH_RESET_PASSWORD_RATE_LIMIT,
+    AUTH_VERIFY_EMAIL_RATE_LIMIT,
+    AUTH_VERIFY_EMAIL_REQUEST_RATE_LIMIT,
+    build_rate_limit_identifier,
+    enforce_rate_limit,
+)
 
 router = APIRouter()
 
@@ -111,6 +123,21 @@ async def _build_auth_response(user: User, request: Request) -> dict:
     }
 
 
+async def _enforce_auth_rate_limit(
+    request: Request,
+    *,
+    rate_limit,
+    identifier_parts: tuple[object, ...],
+    detail: str,
+) -> None:
+    await enforce_rate_limit(
+        request,
+        rate_limit=rate_limit,
+        identifier=build_rate_limit_identifier(request, *identifier_parts),
+        detail=detail,
+    )
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=AuthResponse)
 async def register(
     body: RegisterRequest,
@@ -119,6 +146,12 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ):
     """Register a new user (parent or teacher)."""
+    await _enforce_auth_rate_limit(
+        request,
+        rate_limit=AUTH_REGISTER_RATE_LIMIT,
+        identifier_parts=(body.email,),
+        detail="Too many registration attempts. Please try again later.",
+    )
     existing = await db.scalar(select(User).where(User.email == body.email))
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -138,6 +171,14 @@ async def register(
         db.add(TeacherProfile(user_id=user.id))
     else:
         db.add(ParentProfile(user_id=user.id))
+
+    await record_registration_consents(
+        db,
+        user_id=user.id,
+        request=request,
+        marketing_email=body.marketing_email,
+        marketing_sms=body.marketing_sms,
+    )
 
     await db.commit()
     await db.refresh(user)
@@ -168,6 +209,12 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     """Login with email and password. Returns access token + sets refresh token cookie."""
+    await _enforce_auth_rate_limit(
+        request,
+        rate_limit=AUTH_LOGIN_RATE_LIMIT,
+        identifier_parts=(body.email,),
+        detail="Too many login attempts. Please wait a moment and try again.",
+    )
     user = await db.scalar(select(User).where(User.email == body.email))
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(
@@ -193,6 +240,12 @@ async def refresh_token(
     refresh_token_cookie: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
 ):
     """Exchange refresh token cookie for a new access token."""
+    await _enforce_auth_rate_limit(
+        request,
+        rate_limit=AUTH_REFRESH_RATE_LIMIT,
+        identifier_parts=(refresh_token_cookie,),
+        detail="Too many token refresh attempts. Please try again shortly.",
+    )
     if not refresh_token_cookie:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
 
@@ -294,9 +347,16 @@ async def revoke_other_sessions(
 @router.post("/verify-email/request", response_model=MessageResponse)
 async def request_email_verification(
     body: EmailRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Send or resend an email verification link."""
+    await _enforce_auth_rate_limit(
+        request,
+        rate_limit=AUTH_VERIFY_EMAIL_REQUEST_RATE_LIMIT,
+        identifier_parts=(body.email,),
+        detail="Too many verification email requests. Please try again later.",
+    )
     user = await db.scalar(select(User).where(User.email == body.email))
     if user and user.is_active and not user.email_verified:
         verification_token = await issue_email_verification_token(user.id)
@@ -317,9 +377,16 @@ async def request_email_verification(
 @router.post("/verify-email", response_model=MessageResponse)
 async def verify_email(
     body: VerifyEmailRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Mark a user's email address as verified using a one-time token."""
+    await _enforce_auth_rate_limit(
+        request,
+        rate_limit=AUTH_VERIFY_EMAIL_RATE_LIMIT,
+        identifier_parts=(body.token,),
+        detail="Too many verification attempts. Please request a new link if needed.",
+    )
     user_id = await consume_email_verification_token(body.token)
     if not user_id:
         raise HTTPException(
@@ -339,9 +406,16 @@ async def verify_email(
 @router.post("/forgot-password", response_model=MessageResponse)
 async def forgot_password(
     body: EmailRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Send a password reset link if the account exists."""
+    await _enforce_auth_rate_limit(
+        request,
+        rate_limit=AUTH_FORGOT_PASSWORD_RATE_LIMIT,
+        identifier_parts=(body.email,),
+        detail="Too many password reset requests. Please try again later.",
+    )
     user = await db.scalar(select(User).where(User.email == body.email))
     if user and user.is_active:
         reset_token = await issue_password_reset_token(user.id)
@@ -362,9 +436,16 @@ async def forgot_password(
 @router.post("/reset-password", response_model=MessageResponse)
 async def reset_password(
     body: ResetPasswordRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Reset a user's password using a one-time token."""
+    await _enforce_auth_rate_limit(
+        request,
+        rate_limit=AUTH_RESET_PASSWORD_RATE_LIMIT,
+        identifier_parts=(body.token,),
+        detail="Too many password reset attempts. Please request a new link if needed.",
+    )
     user_id = await consume_password_reset_token(body.token)
     if not user_id:
         raise HTTPException(

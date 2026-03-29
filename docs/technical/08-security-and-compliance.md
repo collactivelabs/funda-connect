@@ -1,13 +1,30 @@
 # 08 — Security & POPIA Compliance
 
 > **Status:** Draft  
-> **Last Updated:** 2026-03-25
+> **Last Updated:** 2026-03-29
 
 ---
 
 ## 1. Overview
 
 FundaConnect handles sensitive personal data (identity documents, children's academic records, financial information) and must comply with the Protection of Personal Information Act (POPIA). This document outlines the security architecture, data protection measures, and compliance obligations.
+
+### 1.1 Implementation Snapshot
+
+As of **2026-03-29**, the live backend already enforces:
+- CORS allow-listing for configured origins
+- Security response headers for all API responses
+- Conditional HSTS in production
+- Redis-backed rate limiting on key auth, booking, upload, and admin mutation endpoints
+- Consent tracking for terms, privacy policy, and marketing preferences
+- Signed document upload validation for PDF/JPEG/PNG files using magic bytes, size limits, and safe filename normalisation
+- Optional ClamAV (`clamscan`) malware scanning for uploads when configured
+- Audit logging for key admin decisions, private document access, booking lifecycle changes, and PayFast ITN state changes
+- Account data export via `/account/data-export`
+- Account deletion requests with immediate deactivation, future booking cancellation, 30-day anonymisation scheduling, and a daily anonymisation sweep
+
+The following areas are still backlog items rather than completed guarantees:
+- Cross-provider malware scanning/quarantine beyond the current optional ClamAV path
 
 ---
 
@@ -79,9 +96,9 @@ FundaConnect must support these POPIA data subject rights:
 
 | Right | Implementation |
 |-------|---------------|
-| **Right to access** | Users can download all their personal data via `/account/data-export` |
+| **Right to access** | Users can download their personal account data via `/account/data-export` |
 | **Right to correction** | Users can update their profile information; request corrections via support |
-| **Right to deletion** | Account deletion request triggers data removal pipeline (see §4.4) |
+| **Right to deletion** | `POST /account/delete-request` deactivates the account, cancels future bookings, revokes sessions, and schedules anonymisation (see §4.4) |
 | **Right to object** | Users can opt out of marketing; object to specific processing |
 | **Right to restrict** | Users can request temporary halt of processing via support |
 | **Right to data portability** | Data export in JSON format |
@@ -108,16 +125,18 @@ User requests account deletion:
    - Account deactivated (is_active = false)
    - Profile removed from search results
    - Active bookings cancelled with refund
+   - Refresh sessions revoked; future access tokens are rejected once the account is inactive
    
 2. 30-day grace period:
-   - User can reactivate within 30 days
-   - Data retained but inaccessible
-   
-3. After 30 days (automated Celery task):
+   - Account remains inactive and inaccessible
+   - Anonymisation is scheduled for 30 days after the request
+
+3. After 30 days (automated daily Celery task):
    - Personal identifiers anonymised (name → "Deleted User", email → hash@deleted.local)
    - Profile photo deleted from S3
-   - Verification documents deleted from S3
+   - Verification documents deleted from S3 and replaced with tombstone references in the DB
    - Phone number cleared
+   - Notifications deleted; legal/audit records retained in anonymised form
    
 4. Retained (legal obligation):
    - Anonymised booking records (5 years — tax/audit)
@@ -146,6 +165,10 @@ class ConsentRecord:
 - Re-consent required when privacy policy is updated
 - Marketing consent separate from service consent
 - Consent withdrawal processed within 24 hours
+
+Current implementation note:
+- Registration records required consent for terms and privacy policy, plus optional marketing email/SMS preferences.
+- Users can review and update marketing consent through `/account/consents`.
 
 ### 4.6 Information Officer
 
@@ -205,45 +228,48 @@ class ConsentRecord:
 - All inputs validated via Pydantic schemas (FastAPI)
 - SQL injection prevention via SQLAlchemy ORM (parameterised queries)
 - XSS prevention via React's default escaping + Content Security Policy
-- File upload validation: type checking (magic bytes), size limits, virus scanning
+- File upload validation currently includes declared-type checks, magic-byte validation, size limits, filename normalisation, and optional `clamscan` malware scanning when configured
 
 ### 6.2 API Security
 - JWT authentication with short-lived access tokens (30 min)
 - CORS configured to allow only known origins
-- Rate limiting per endpoint (see API Specification)
+- Security headers added on every response (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`, and HSTS in production)
+- Redis-backed rate limiting now protects key auth, booking, upload, and admin mutation endpoints
 - Request size limits (10MB max body)
 - No sensitive data in URL parameters
 
 ### 6.3 File Upload Security
 ```python
-ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
+ALLOWED_SIGNATURES = {
+    "application/pdf": [b"%PDF-"],
+    "image/jpeg": [b"\xff\xd8\xff"],
+    "image/png": [b"\x89PNG\r\n\x1a\n"],
 }
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
-async def validate_upload(file: UploadFile):
+def validate_upload(contents: bytes, filename: str, declared_content_type: str):
     # 1. Check declared content type
-    if file.content_type not in ALLOWED_MIME_TYPES:
+    if declared_content_type not in ALLOWED_SIGNATURES:
         raise ValidationError("File type not allowed")
-    
+
     # 2. Check file size
-    contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:
         raise ValidationError("File too large")
-    
+
     # 3. Validate magic bytes (actual file type)
-    actual_type = magic.from_buffer(contents[:1024], mime=True)
-    if actual_type not in ALLOWED_MIME_TYPES:
+    if not any(contents.startswith(signature) for signature in ALLOWED_SIGNATURES[declared_content_type]):
         raise ValidationError("File content does not match declared type")
-    
-    # 4. Generate safe filename
-    safe_name = f"{uuid4()}.{get_extension(actual_type)}"
-    
-    await file.seek(0)
-    return safe_name, contents
+
+    # 4. Normalise the stored filename
+    safe_name = sanitise_filename(filename, declared_content_type)
+
+    return safe_name
 ```
+
+Current implementation note:
+- Document uploads are validated against the declared file type and canonicalised before storage.
+- When `MALWARE_SCAN_MODE=clamscan`, uploads are scanned before storage and rejected if ClamAV marks them as infected.
+- Full quarantine workflows or third-party scanning providers remain future enhancements.
 
 ### 6.4 Dependency Security
 - `pip-audit` and `pnpm audit` run in CI pipeline
@@ -254,6 +280,14 @@ async def validate_upload(file: UploadFile):
 ---
 
 ## 7. Audit Logging
+
+Implementation snapshot:
+- The backend now persists audit records for high-sensitivity actions, including:
+  - admin document access/review and teacher verification decisions
+  - payout, refund, and dispute resolution actions
+  - teacher document uploads and document access
+  - booking creation, rescheduling, cancellation, completion, dispute creation, series cancellation, and PayFast ITN status changes
+- Each record stores actor role, actor user id when available, resource type/id, request IP, user agent, and structured metadata.
 
 ### 7.1 Logged Events
 

@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -18,6 +20,9 @@ class User(UUIDMixin, TimestampMixin, Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deletion_scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    anonymized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     # Relationships
     teacher_profile: Mapped["TeacherProfile | None"] = relationship(  # noqa: F821

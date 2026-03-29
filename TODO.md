@@ -1,6 +1,6 @@
 # FundaConnect TODO
 
-Reviewed: 2026-03-28
+Reviewed: 2026-03-29
 
 This file tracks outstanding work identified by comparing the original technical documentation with the current implementation.
 
@@ -8,8 +8,8 @@ This file tracks outstanding work identified by comparing the original technical
 
 - [x] Establish a safer foundation first: tests, frontend scripts, and CI.
 - [x] Harden authentication flows next.
-- [ ] Build the full admin verification workflow.
-- [ ] Complete the remaining payments/reporting/refund work.
+- [x] Build the full admin verification workflow.
+- [ ] Complete the remaining payments/reporting/scope decisions.
 - [ ] Finish security and documentation cleanup.
 
 ## 1. Foundation And Tooling
@@ -71,12 +71,13 @@ This file tracks outstanding work identified by comparing the original technical
 
 ## 8. Security And Compliance
 
-- [ ] Add security headers beyond the current CORS setup.
-- [ ] Add rate limiting for auth, booking, upload, and admin endpoints.
-- [ ] Add audit logging for sensitive/admin actions.
-- [ ] Add consent tracking if POPIA scope still requires it.
-- [ ] Add data export and account deletion/anonymisation flows.
-- [ ] Harden file uploads with stricter content validation and scanning where appropriate.
+- [x] Add security headers beyond the current CORS setup.
+- [x] Add rate limiting for auth, booking, upload, and admin endpoints.
+- [x] Add audit logging for sensitive/admin actions.
+- [x] Add consent tracking for registration and marketing preference changes.
+- [x] Add data export and account deletion/anonymisation flows.
+- [x] Harden file uploads with stricter content validation and safe filename normalisation.
+- [x] Add malware/virus scanning support for uploads when configured.
 
 ## 9. Deployment, Infrastructure, And Docs
 

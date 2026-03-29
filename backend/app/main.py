@@ -8,6 +8,14 @@ from app.core.redis import close_redis
 
 logger = structlog.get_logger()
 
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+
 app = FastAPI(
     title="FundaConnect API",
     description="Connecting South African teachers with homeschooling families",
@@ -25,6 +33,19 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    for header_name, header_value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header_name, header_value)
+    if settings.is_production:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
 
 
 @app.get("/health", tags=["health"])

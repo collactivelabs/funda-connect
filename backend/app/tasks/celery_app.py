@@ -7,6 +7,7 @@ celery_app = Celery(
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
     include=[
+        "app.tasks.account_lifecycle",
         "app.tasks.lessons",
         "app.tasks.notifications",
         "app.tasks.payouts",
@@ -37,6 +38,11 @@ celery_app.conf.update(
         "process-weekly-payouts": {
             "task": "app.tasks.payouts.process_weekly_payouts",
             "schedule": 60 * 60 * 24 * 7,
+        },
+        # Daily sweep to anonymize accounts whose deletion grace period has elapsed
+        "anonymize-due-accounts": {
+            "task": "app.tasks.account_lifecycle.anonymize_due_accounts",
+            "schedule": 60 * 60 * 24,
         },
     },
 )

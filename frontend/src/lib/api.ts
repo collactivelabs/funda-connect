@@ -1,6 +1,9 @@
 import axios, { type AxiosError } from "axios";
 import type {
   ApiError,
+  AccountConsent,
+  AccountDataExportResponse,
+  AccountDeletionStatus,
   AuthSession,
   CurriculumOption,
   GradeLevelGroup,
@@ -88,6 +91,17 @@ export const apiClient = {
     resetPassword: (body: unknown) => api.post("/auth/reset-password", body),
     logout: () => api.post("/auth/logout"),
     me: () => api.get("/auth/me"),
+  },
+  account: {
+    getConsents: () => api.get<AccountConsent>("/account/consents"),
+    updateConsents: (body: { marketingEmail: boolean; marketingSms: boolean }) =>
+      api.put<AccountConsent>("/account/consents", {
+        marketing_email: body.marketingEmail,
+        marketing_sms: body.marketingSms,
+      }),
+    getDeletionStatus: () => api.get<AccountDeletionStatus>("/account/deletion-status"),
+    requestDeletion: () => api.post<AccountDeletionStatus>("/account/delete-request"),
+    getDataExport: () => api.get<AccountDataExportResponse>("/account/data-export"),
   },
   referenceData: {
     listCurricula: () => api.get<CurriculumOption[]>("/curricula"),

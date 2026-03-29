@@ -31,6 +31,35 @@ export interface AuthSession {
   ipAddress?: string | null;
 }
 
+export interface ConsentState {
+  granted: boolean;
+  version: string;
+  grantedAt?: string | null;
+  revokedAt?: string | null;
+}
+
+export interface AccountConsent {
+  termsOfService: ConsentState;
+  privacyPolicy: ConsentState;
+  marketingEmail: ConsentState;
+  marketingSms: ConsentState;
+}
+
+export interface AccountDeletionStatus {
+  status: "active" | "pendingDeletion" | "anonymized";
+  isActive: boolean;
+  deletionRequestedAt?: string | null;
+  deletionScheduledFor?: string | null;
+  anonymizedAt?: string | null;
+  cancelledFutureBookings: number;
+  gracePeriodDays: number;
+}
+
+export interface AccountDataExportResponse {
+  exportedAt: string;
+  data: Record<string, unknown>;
+}
+
 export interface NotificationItem {
   id: string;
   type: string;

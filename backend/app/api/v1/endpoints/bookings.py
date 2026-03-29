@@ -24,6 +24,12 @@ from app.services.prepaid_series import (
     series_total_amount_cents,
 )
 from app.services.notifications import create_in_app_notification
+from app.services.audit import create_audit_log
+from app.services.rate_limits import (
+    BOOKING_MUTATION_RATE_LIMIT,
+    build_rate_limit_identifier,
+    enforce_rate_limit,
+)
 from app.services.refunds import calculate_booking_cancellation_outcome
 from app.services.scheduling import (
     acquire_slot_hold,
@@ -286,10 +292,17 @@ async def _refresh_booking_room(booking: Booking) -> None:
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PayFastRedirectResponse)
 async def create_booking(
     body: CreateBookingRequest,
+    request: Request,
     payload: dict = Depends(require_parent),
     db: AsyncSession = Depends(get_db),
 ):
     """Parent creates a booking. Returns PayFast payment URL."""
+    await enforce_rate_limit(
+        request,
+        rate_limit=BOOKING_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many booking requests. Please try again shortly.",
+    )
     parent_profile = await db.scalar(
         select(ParentProfile).where(ParentProfile.user_id == UUID(payload["sub"]))
     )
@@ -433,6 +446,26 @@ async def create_booking(
             gateway_metadata=payment_metadata,
         )
         db.add(payment)
+        await create_audit_log(
+            db,
+            action="booking.create",
+            resource_type="booking",
+            resource_id=booking.id,
+            actor_user_id=UUID(payload["sub"]),
+            actor_role=payload.get("role"),
+            request=request,
+            metadata={
+                "teacher_id": booking.teacher_id,
+                "learner_id": booking.learner_id,
+                "subject_id": booking.subject_id,
+                "scheduled_at": booking.scheduled_at,
+                "duration_minutes": booking.duration_minutes,
+                "is_trial": booking.is_trial,
+                "is_recurring": booking.is_recurring,
+                "recurring_weeks": recurring_weeks,
+                "amount_cents": checkout_amount_cents(payment.amount_cents, payment.gateway_metadata),
+            },
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -511,10 +544,17 @@ async def get_booking(
 async def reschedule_booking(
     booking_id: UUID,
     body: RescheduleBookingRequest,
+    request: Request,
     payload: dict = Depends(require_any_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Move a future confirmed booking to another valid slot for the same teacher."""
+    await enforce_rate_limit(
+        request,
+        rate_limit=BOOKING_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many booking changes. Please wait a moment and try again.",
+    )
     booking = await db.scalar(
         select(Booking)
         .where(Booking.id == booking_id)
@@ -616,8 +656,23 @@ async def reschedule_booking(
         )
 
     try:
+        original_start = booking.scheduled_at
         booking.scheduled_at = next_start
         await _refresh_booking_room(booking)
+        await create_audit_log(
+            db,
+            action="booking.reschedule",
+            resource_type="booking",
+            resource_id=booking.id,
+            actor_user_id=UUID(payload["sub"]),
+            actor_role=payload.get("role"),
+            request=request,
+            metadata={
+                "previous_scheduled_at": original_start,
+                "new_scheduled_at": next_start,
+                "teacher_id": booking.teacher_id,
+            },
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -652,10 +707,17 @@ async def reschedule_booking(
 async def cancel_booking(
     booking_id: UUID,
     body: CancelBookingRequest,
+    request: Request,
     payload: dict = Depends(require_any_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Cancel a booking. Only pending_payment or confirmed bookings can be cancelled."""
+    await enforce_rate_limit(
+        request,
+        rate_limit=BOOKING_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many booking changes. Please wait a moment and try again.",
+    )
     booking = await db.scalar(
         select(Booking)
         .where(Booking.id == booking_id)
@@ -729,6 +791,22 @@ async def cancel_booking(
         notification_type="booking_cancelled",
         metadata={"booking_id": str(booking.id), "cancelled_by_role": actor_role},
     )
+    await create_audit_log(
+        db,
+        action="booking.cancel",
+        resource_type="booking",
+        resource_id=booking.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "previous_status": previous_status,
+            "new_status": booking.status,
+            "cancelled_by_role": actor_role,
+            "scheduled_at": booking.scheduled_at,
+            "has_reason": bool(body.reason),
+        },
+    )
 
     return booking
 
@@ -736,10 +814,17 @@ async def cancel_booking(
 @router.post("/{booking_id}/complete", response_model=BookingResponse)
 async def complete_booking(
     booking_id: UUID,
+    request: Request,
     payload: dict = Depends(require_any_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Teacher marks a confirmed lesson as completed."""
+    await enforce_rate_limit(
+        request,
+        rate_limit=BOOKING_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many booking changes. Please wait a moment and try again.",
+    )
     booking = await db.get(Booking, booking_id)
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
@@ -777,6 +862,16 @@ async def complete_booking(
         notification_type="booking_completed",
         metadata={"booking_id": str(booking.id)},
     )
+    await create_audit_log(
+        db,
+        action="booking.complete",
+        resource_type="booking",
+        resource_id=booking.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={"scheduled_at": booking.scheduled_at, "teacher_id": booking.teacher_id},
+    )
     return booking
 
 
@@ -784,10 +879,17 @@ async def complete_booking(
 async def raise_booking_dispute(
     booking_id: UUID,
     body: RaiseDisputeRequest,
+    request: Request,
     payload: dict = Depends(require_any_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Raise a dispute on a booking after the lesson has started and before payout is paid."""
+    await enforce_rate_limit(
+        request,
+        rate_limit=BOOKING_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many dispute attempts. Please wait a moment and try again.",
+    )
     booking = await db.scalar(
         select(Booking)
         .where(Booking.id == booking_id)
@@ -851,6 +953,20 @@ async def raise_booking_dispute(
         notification_type="booking_disputed",
         metadata={"booking_id": str(booking.id), "raised_by_role": payload.get("role", "unknown")},
     )
+    await create_audit_log(
+        db,
+        action="booking.dispute.raise",
+        resource_type="booking",
+        resource_id=booking.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "raised_by_role": payload.get("role", "unknown"),
+            "scheduled_at": booking.scheduled_at,
+            "has_reason": bool(body.reason.strip()),
+        },
+    )
     return booking
 
 
@@ -858,10 +974,17 @@ async def raise_booking_dispute(
 async def cancel_booking_series(
     booking_id: UUID,
     body: CancelBookingRequest,
+    request: Request,
     payload: dict = Depends(require_any_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Cancel all future confirmed bookings in a recurring series."""
+    await enforce_rate_limit(
+        request,
+        rate_limit=BOOKING_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many booking changes. Please wait a moment and try again.",
+    )
     booking = await db.scalar(
         select(Booking)
         .where(Booking.id == booking_id)
@@ -918,6 +1041,20 @@ async def cancel_booking_series(
         )
         cancelled.append(sib)
 
+    await create_audit_log(
+        db,
+        action="booking.series.cancel",
+        resource_type="booking_series",
+        resource_id=root_id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "cancelled_count": len(cancelled),
+            "has_reason": bool(body.reason),
+            "booking_ids": [booking.id for booking in cancelled],
+        },
+    )
     return cancelled
 
 
@@ -1002,6 +1139,15 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
             booking.status = "expired"
             booking.hold_expires_at = None
             booking.payment.status = "cancelled"
+            await create_audit_log(
+                db,
+                action="payment.itn.expired",
+                resource_type="booking",
+                resource_id=booking.id,
+                actor_role="system",
+                request=request,
+                metadata={"payment_status": payment_status, "pf_payment_id": pf_payment_id},
+            )
             await db.commit()
             await release_slot_hold(redis, hold_keys)
             return {"status": "expired"}
@@ -1066,6 +1212,15 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
                     )
                 )
 
+        await create_audit_log(
+            db,
+            action="payment.itn.complete",
+            resource_type="booking",
+            resource_id=booking.id,
+            actor_role="system",
+            request=request,
+            metadata={"payment_status": payment_status, "pf_payment_id": pf_payment_id},
+        )
         await db.commit()
         await release_slot_hold(redis, hold_keys)
 
@@ -1091,6 +1246,15 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
         booking.payment.status = payment_status.lower()
         booking.status = "expired"
         booking.hold_expires_at = None
+        await create_audit_log(
+            db,
+            action="payment.itn.failed",
+            resource_type="booking",
+            resource_id=booking.id,
+            actor_role="system",
+            request=request,
+            metadata={"payment_status": payment_status, "pf_payment_id": pf_payment_id},
+        )
         await db.commit()
         await release_slot_hold(redis, hold_keys)
 

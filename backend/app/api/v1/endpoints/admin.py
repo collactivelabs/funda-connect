@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,13 @@ from app.models.parent import ParentProfile
 from app.models.payment import Dispute, Payment, Payout, Refund, VerificationDocument
 from app.models.teacher import TeacherProfile, TeacherSubject
 from app.schemas.teacher import DocumentAccessResponse, VerificationDocumentResponse
+from app.services.audit import create_audit_log
 from app.services.notifications import create_in_app_notification
+from app.services.rate_limits import (
+    ADMIN_MUTATION_RATE_LIMIT,
+    build_rate_limit_identifier,
+    enforce_rate_limit,
+)
 from app.services.refunds import payment_status_after_refund
 from app.services.verification_documents import (
     build_document_access_url,
@@ -376,13 +382,28 @@ async def get_teacher_verification_detail(
 async def get_teacher_document_access(
     teacher_id: UUID,
     document_id: UUID,
-    _payload: dict = Depends(require_admin),
+    request: Request,
+    payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     teacher = await _get_teacher_with_documents(teacher_id, db)
     document = next((doc for doc in teacher.documents if doc.id == document_id), None)
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    await create_audit_log(
+        db,
+        action="verification_document.access",
+        resource_type="verification_document",
+        resource_id=document.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "teacher_id": teacher.id,
+            "document_type": document.document_type,
+            "scope": "admin",
+        },
+    )
     return _document_access_response(document)
 
 
@@ -394,9 +415,16 @@ async def review_teacher_document(
     teacher_id: UUID,
     document_id: UUID,
     body: ReviewDocumentRequest,
-    _payload: dict = Depends(require_admin),
+    request: Request,
+    payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        rate_limit=ADMIN_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many admin actions. Please wait a moment and try again.",
+    )
     teacher = await _get_teacher_with_documents(teacher_id, db)
     document = next((doc for doc in teacher.documents if doc.id == document_id), None)
     if not document:
@@ -407,6 +435,21 @@ async def review_teacher_document(
     document.reviewed_at = datetime.now(UTC)
     _sync_teacher_verification_state(teacher)
     await db.flush()
+    await create_audit_log(
+        db,
+        action="verification_document.review",
+        resource_type="verification_document",
+        resource_id=document.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "teacher_id": teacher.id,
+            "document_type": document.document_type,
+            "status": body.status,
+            "has_reviewer_notes": bool(body.reviewer_notes),
+        },
+    )
     return VerificationDocumentResponse.model_validate(document)
 
 
@@ -414,10 +457,18 @@ async def review_teacher_document(
 async def verify_teacher(
     teacher_id: UUID,
     body: VerifyTeacherRequest,
-    _payload: dict = Depends(require_admin),
+    request: Request,
+    payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        rate_limit=ADMIN_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many admin actions. Please wait a moment and try again.",
+    )
     teacher = await _get_teacher_with_documents(teacher_id, db)
+    previous_status = teacher.verification_status
 
     if body.action == "verify":
         if not has_approved_all_required_documents(teacher.documents):
@@ -459,19 +510,53 @@ async def verify_teacher(
     )
 
     await db.flush()
+    await create_audit_log(
+        db,
+        action="teacher.verification_status.update",
+        resource_type="teacher_profile",
+        resource_id=teacher.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "teacher_id": teacher.id,
+            "action": body.action,
+            "previous_status": previous_status,
+            "new_status": teacher.verification_status,
+            "is_listed": teacher.is_listed,
+            "has_notes": bool(body.notes),
+        },
+    )
     return {"status": teacher.verification_status, "is_listed": teacher.is_listed}
 
 
 @router.patch("/teachers/{teacher_id}/premium")
 async def toggle_premium(
     teacher_id: UUID,
-    _payload: dict = Depends(require_admin),
+    request: Request,
+    payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        rate_limit=ADMIN_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many admin actions. Please wait a moment and try again.",
+    )
     teacher = await db.get(TeacherProfile, teacher_id)
     if not teacher:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
     teacher.is_premium = not teacher.is_premium
+    await create_audit_log(
+        db,
+        action="teacher.premium.toggle",
+        resource_type="teacher_profile",
+        resource_id=teacher.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={"teacher_id": teacher.id, "is_premium": teacher.is_premium},
+    )
     return {"is_premium": teacher.is_premium}
 
 
@@ -521,12 +606,20 @@ async def list_payouts(
 async def update_payout(
     payout_id: UUID,
     body: UpdatePayoutRequest,
-    _payload: dict = Depends(require_admin),
+    request: Request,
+    payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        rate_limit=ADMIN_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many admin actions. Please wait a moment and try again.",
+    )
     payout = await db.get(Payout, payout_id)
     if not payout:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payout not found")
+    previous_status = payout.status
 
     allowed = {"processing", "paid", "failed"}
     if body.status not in allowed:
@@ -557,6 +650,23 @@ async def update_payout(
 
         send_payout_notification.apply_async(args=[str(payout_id)], countdown=3)
 
+    await create_audit_log(
+        db,
+        action="payout.status.update",
+        resource_type="payout",
+        resource_id=payout.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "teacher_id": payout.teacher_id,
+            "payment_id": payout.payment_id,
+            "previous_status": previous_status,
+            "new_status": payout.status,
+            "bank_reference_present": bool(body.bank_reference),
+            "has_notes": bool(body.notes),
+        },
+    )
     return {"id": payout.id, "status": payout.status}
 
 
@@ -611,9 +721,16 @@ async def list_refunds(
 async def update_refund(
     refund_id: UUID,
     body: UpdateRefundRequest,
-    _payload: dict = Depends(require_admin),
+    request: Request,
+    payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        rate_limit=ADMIN_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many admin actions. Please wait a moment and try again.",
+    )
     refund = await db.scalar(
         select(Refund)
         .where(Refund.id == refund_id)
@@ -621,6 +738,7 @@ async def update_refund(
     )
     if not refund:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refund not found")
+    previous_status = refund.status
 
     allowed = {"processing", "refunded", "failed"}
     if body.status not in allowed:
@@ -660,6 +778,23 @@ async def update_refund(
         refund.processed_at = None
         refund.payment.status = "complete"
 
+    await create_audit_log(
+        db,
+        action="refund.status.update",
+        resource_type="refund",
+        resource_id=refund.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "payment_id": refund.payment_id,
+            "booking_id": refund.payment.booking_id,
+            "previous_status": previous_status,
+            "new_status": refund.status,
+            "gateway_reference_present": bool(body.gateway_reference),
+            "has_notes": bool(body.notes),
+        },
+    )
     return {"id": refund.id, "status": refund.status}
 
 
@@ -710,9 +845,16 @@ async def list_disputes(
 async def resolve_dispute(
     dispute_id: UUID,
     body: ResolveDisputeRequest,
-    _payload: dict = Depends(require_admin),
+    request: Request,
+    payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        rate_limit=ADMIN_MUTATION_RATE_LIMIT,
+        identifier=build_rate_limit_identifier(request, payload["sub"]),
+        detail="Too many admin actions. Please wait a moment and try again.",
+    )
     dispute = await db.scalar(
         select(Dispute)
         .where(Dispute.id == dispute_id)
@@ -805,4 +947,19 @@ async def resolve_dispute(
                 metadata={"dispute_id": str(dispute.id), "booking_id": str(booking.id), "resolution": body.resolution},
             )
 
+    await create_audit_log(
+        db,
+        action="dispute.resolve",
+        resource_type="dispute",
+        resource_id=dispute.id,
+        actor_user_id=UUID(payload["sub"]),
+        actor_role=payload.get("role"),
+        request=request,
+        metadata={
+            "booking_id": booking.id,
+            "resolution": body.resolution,
+            "booking_status": booking.status,
+            "has_notes": bool(body.notes),
+        },
+    )
     return {"id": dispute.id, "status": dispute.status, "resolution": dispute.resolution}
