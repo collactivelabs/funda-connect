@@ -42,6 +42,7 @@ from app.services.scheduling import (
     slot_conflicts_with_bookings,
     slot_lock_keys,
 )
+from app.services.teacher_search import search_teacher_ids, sync_teacher_document_by_id
 from app.schemas.teacher import (
     AddSubjectRequest,
     DocumentAccessResponse,
@@ -104,23 +105,20 @@ async def _get_my_profile(payload: dict, db: AsyncSession) -> TeacherProfile:
     return profile
 
 
-# ── Public ────────────────────────────────────────────────────
-
-@router.get("", response_model=list[TeacherProfileResponse])
-async def list_teachers(
-    subject: str | None = None,
-    curriculum: str | None = None,
-    grade: str | None = None,
-    min_rate: int | None = None,
-    max_rate: int | None = None,
-    min_rating: float | None = None,
-    province: str | None = None,
-    q: str | None = None,
-    sort_by: str | None = None,
-    sort_order: str = "desc",
-    db: AsyncSession = Depends(get_db),
-):
-    """Search and filter verified, listed teachers."""
+async def _list_teachers_via_db(
+    *,
+    subject: str | None,
+    curriculum: str | None,
+    grade: str | None,
+    min_rate: int | None,
+    max_rate: int | None,
+    min_rating: float | None,
+    province: str | None,
+    q: str | None,
+    sort_by: str | None,
+    sort_order: str,
+    db: AsyncSession,
+) -> list[TeacherProfileResponse]:
     query = (
         select(TeacherProfile)
         .where(TeacherProfile.is_listed == True)  # noqa: E712
@@ -190,6 +188,67 @@ async def list_teachers(
     return [_teacher_response(p) for p in result.unique().all()]
 
 
+# ── Public ────────────────────────────────────────────────────
+
+@router.get("", response_model=list[TeacherProfileResponse])
+async def list_teachers(
+    subject: str | None = None,
+    curriculum: str | None = None,
+    grade: str | None = None,
+    min_rate: int | None = None,
+    max_rate: int | None = None,
+    min_rating: float | None = None,
+    province: str | None = None,
+    q: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    db: AsyncSession = Depends(get_db),
+):
+    """Search and filter verified, listed teachers."""
+    search_ids = await search_teacher_ids(
+        query=q,
+        subject=subject,
+        curriculum=curriculum,
+        grade=grade,
+        min_rate=min_rate,
+        max_rate=max_rate,
+        min_rating=min_rating,
+        province=province,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+    if search_ids is None:
+        return await _list_teachers_via_db(
+            subject=subject,
+            curriculum=curriculum,
+            grade=grade,
+            min_rate=min_rate,
+            max_rate=max_rate,
+            min_rating=min_rating,
+            province=province,
+            q=q,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            db=db,
+        )
+    if not search_ids:
+        return []
+
+    result = await db.scalars(
+        select(TeacherProfile)
+        .where(
+            TeacherProfile.id.in_([UUID(teacher_id) for teacher_id in search_ids]),
+            TeacherProfile.is_listed == True,  # noqa: E712
+            TeacherProfile.verification_status == "verified",
+        )
+        .options(selectinload(TeacherProfile.subjects).selectinload(TeacherSubject.subject))
+        .options(selectinload(TeacherProfile.user))
+    )
+    profiles_by_id = {str(profile.id): profile for profile in result.unique().all()}
+    ordered_profiles = [profiles_by_id[teacher_id] for teacher_id in search_ids if teacher_id in profiles_by_id]
+    return [_teacher_response(profile) for profile in ordered_profiles]
+
+
 # ── Teacher-only (must be registered BEFORE /{teacher_id} to avoid UUID parsing) ──
 
 @router.get("/me", response_model=TeacherProfileResponse)
@@ -209,6 +268,8 @@ async def update_my_profile(
     profile = await _get_my_profile(payload, db)
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(profile, field, value)
+    await db.flush()
+    await sync_teacher_document_by_id(db, profile.id)
     return _teacher_response(profile)
 
 
@@ -240,6 +301,7 @@ async def add_subject(
     db.add(ts)
     await db.flush()
     ts.subject = subject
+    await sync_teacher_document_by_id(db, profile.id)
     return TeacherSubjectResponse.from_orm_with_subject(ts)
 
 
@@ -254,6 +316,8 @@ async def remove_subject(
     if not ts or ts.teacher_id != profile.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
     await db.delete(ts)
+    await db.flush()
+    await sync_teacher_document_by_id(db, profile.id)
 
 
 @router.get("/me/availability", response_model=list[AvailabilitySlotResponse])

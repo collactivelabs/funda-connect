@@ -4,7 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.database import AsyncSessionLocal
 from app.core.redis import close_redis
+from app.services.teacher_search import rebuild_teacher_search_index
 
 logger = structlog.get_logger()
 
@@ -51,6 +53,16 @@ async def add_security_headers(request, call_next):
 @app.get("/health", tags=["health"])
 async def health_check():
     return {"status": "ok", "environment": settings.ENVIRONMENT}
+
+
+@app.on_event("startup")
+async def on_startup():
+    try:
+        async with AsyncSessionLocal() as session:
+            indexed_count = await rebuild_teacher_search_index(session)
+        logger.info("teacher_search.startup_sync.complete", indexed_count=indexed_count)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("teacher_search.startup_sync.failed", error=str(exc))
 
 
 @app.on_event("shutdown")

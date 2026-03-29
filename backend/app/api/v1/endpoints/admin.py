@@ -22,6 +22,7 @@ from app.services.rate_limits import (
     enforce_rate_limit,
 )
 from app.services.refunds import payment_status_after_refund
+from app.services.teacher_search import sync_teacher_document_by_id
 from app.services.verification_documents import (
     build_document_access_url,
     derive_teacher_verification_status,
@@ -510,6 +511,7 @@ async def verify_teacher(
     )
 
     await db.flush()
+    await sync_teacher_document_by_id(db, teacher.id)
     await create_audit_log(
         db,
         action="teacher.verification_status.update",
@@ -547,6 +549,8 @@ async def toggle_premium(
     if not teacher:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
     teacher.is_premium = not teacher.is_premium
+    await db.flush()
+    await sync_teacher_document_by_id(db, teacher.id)
     await create_audit_log(
         db,
         action="teacher.premium.toggle",

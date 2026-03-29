@@ -68,7 +68,7 @@ This file tracks outstanding work identified by comparing the original technical
 
 - [x] Add reference-data endpoints for grade levels and curricula.
 - [x] Add a topics endpoint if topics remain part of the API contract.
-- [ ] Decide whether teacher search should move to Meilisearch or stay database-backed.
+- [x] Move teacher search to Meilisearch with a safe database fallback.
 - [x] Align the public search/filter contract with what the API actually supports.
 
 ## 8. Security And Compliance
