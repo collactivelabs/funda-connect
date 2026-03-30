@@ -14,7 +14,7 @@ A marketplace connecting South African homeschooling families with qualified tut
 | Cache / Queue broker | Redis 7 |
 | Task queue | Celery 5 + Celery Beat |
 | Search | Meilisearch |
-| Payments | PayFast (sandbox + live) |
+| Payments | PayFast (implemented), Ozow (planned) |
 | Video | daily.co |
 | Storage | AWS S3 (teacher documents) |
 | Email | SMTP (stdlib) |
@@ -206,7 +206,7 @@ docker compose restart backend
 ## Core Features
 
 - **Teacher discovery** — search by subject, curriculum (CAPS / IEB / Cambridge), grade, province, and rate
-- **Bookings** — parents book single or recurring weekly lessons; payment via PayFast redirect
+- **Bookings** — parents book single lessons or prepaid weekly series; payment via PayFast redirect
 - **Video lessons** — daily.co rooms auto-created on payment; join button active 10 min before start
 - **Reviews** — parents rate completed lessons; ratings displayed on teacher profiles
 - **Document verification** — teachers upload ID and qualifications to S3; admin reviews and approves
@@ -248,7 +248,7 @@ pending_payment → confirmed → completed → reviewed
                 ↘ cancelled
 ```
 
-Recurring bookings: the root booking goes through PayFast. On payment confirmation, N−1 child bookings are created as `confirmed` at weekly intervals, all referencing the root via `recurring_booking_id`.
+Prepaid weekly series: the root booking goes through PayFast for the full series amount. On payment confirmation, N−1 child bookings are created as `confirmed` at weekly intervals, all referencing the root via `recurring_booking_id`. This is the current supported recurring model; true subscription rebilling is not implemented.
 
 ## Auth Flows
 

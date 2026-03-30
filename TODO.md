@@ -42,8 +42,8 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Implement refund handling based on cancellation policy.
 - [x] Add dispute/escrow workflow where needed.
 - [x] Add invoice or receipt generation if still in scope.
-- [ ] Decide whether recurring lessons should stay as the current prepaid-series model or move to true subscription-style charging.
-- [ ] Decide whether Ozow support is still planned; implement it or remove the remaining references.
+- [x] Keep recurring lessons as the current prepaid weekly series model; defer true subscription-style charging unless product requirements change.
+- [ ] Ozow remains in planned scope; implementation pending after PayFast.
 
 ## 5. Bookings, Learners, And Lesson Operations
 
@@ -53,7 +53,7 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Persist and surface lesson notes and covered topics on completed lessons.
 - [x] Add a first-class attendance/no-show workflow for live lessons.
 - [x] Add blocked dates to teacher scheduling.
-- [ ] Decide whether calendar sync is still needed for scheduling.
+- [x] Defer Google/Outlook sync and `.ics` export; keep scheduling focused on in-app availability, blocked dates, reminders, and rescheduling unless external calendar sync becomes a real product requirement.
 
 ## 6. Notifications
 

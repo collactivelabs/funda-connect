@@ -368,8 +368,21 @@ Report that the other party has still not joined the lesson after the grace wind
 ### `POST /bookings/{id}/reschedule` 🔒 Parent | Teacher
 Reschedule to a new slot.
 
-### `POST /bookings/recurring` 🔒 Parent
-Create a recurring weekly booking series.
+### `POST /bookings` 🔒 Parent
+Create a single lesson or a prepaid weekly series.
+
+**Recurring series request fields:**
+```json
+{
+  "is_recurring": true,
+  "recurring_weeks": 4
+}
+```
+
+When `is_recurring=true`, the API creates a root booking in `pending_payment`, charges the full series amount once via PayFast, and confirms the later weekly child bookings only after the root payment clears.
+
+### `POST /bookings/{id}/cancel-series` 🔒 Parent | Teacher
+Cancel the remaining future lessons in a prepaid weekly series.
 
 ---
 

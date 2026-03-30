@@ -15,7 +15,7 @@ class Payment(UUIDMixin, TimestampMixin, Base):
     booking_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    gateway: Mapped[str] = mapped_column(String(20), nullable=False)  # payfast | ozow
+    gateway: Mapped[str] = mapped_column(String(20), nullable=False)  # payfast | manual (Ozow planned)
     gateway_payment_id: Mapped[str | None] = mapped_column(String(100), index=True)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)

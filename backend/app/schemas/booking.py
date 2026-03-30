@@ -133,7 +133,7 @@ class CreateBookingRequest(BaseModel):
     duration_minutes: int = Field(60, ge=30, le=180)
     is_trial: bool = False
     is_recurring: bool = False
-    recurring_weeks: int | None = Field(None, ge=2, le=12)  # total occurrences if recurring
+    recurring_weeks: int | None = Field(None, ge=2, le=12)  # total lessons in a prepaid weekly series
     parent_notes: str | None = None
 
     @field_validator("duration_minutes")

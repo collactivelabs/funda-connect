@@ -7,7 +7,7 @@
 
 ## 1. Overview
 
-The booking engine manages the full lifecycle from availability definition through lesson completion. It handles slot conflicts, recurring bookings, cancellations, rescheduling, and enforces business rules around timing and refunds.
+The booking engine manages the full lifecycle from availability definition through lesson completion. It handles slot conflicts, prepaid weekly series, cancellations, rescheduling, and enforces business rules around timing and refunds.
 
 ---
 
@@ -215,11 +215,11 @@ def generate_booking_number(date: date) -> str:
 
 ---
 
-## 7. Recurring Bookings
+## 7. Weekly Series
 
 ### 7.1 Creation
 
-A parent can request a recurring weekly booking:
+A parent can request a prepaid weekly lesson series:
 
 ```json
 {
@@ -237,15 +237,24 @@ A parent can request a recurring weekly booking:
 ### 7.2 Processing
 
 ```
-1. Validate teacher availability for the requested slot on the specified day
-2. Create recurring_bookings record
-3. Generate individual bookings for each week:
-   - Celery task runs weekly (Sunday night) to create next week's booking
-   - Each individual booking follows the standard payment flow
-   - Parent is charged weekly via PayFast subscription
-4. Skip blocked dates and school holidays automatically
-5. Either party can cancel the recurring series (future bookings only)
+1. Validate that the selected weekly slot is available across the requested number of weeks
+2. Create one root booking in `pending_payment`
+3. Generate a single PayFast checkout for the **full series amount**
+4. On successful payment:
+   - Root booking moves to `confirmed`
+   - The API creates the later weekly child bookings as `confirmed`
+   - Each child booking points back to the root via `recurring_booking_id`
+5. Skip blocked dates by rejecting series creation if any occurrence lands on an unavailable week
+6. Either party can cancel the remaining future lessons in the series
 ```
+
+### 7.3 Current Product Decision
+
+FundaConnect currently supports **prepaid weekly series**, not auto-rebilling subscriptions.
+
+- This keeps booking, dispute, refund, and payout behavior predictable
+- Parent receipts and payment history show one series payment
+- If the product later needs true subscription rebilling, it should be treated as a separate payment-system project rather than an incremental copy tweak
 
 ---
 
@@ -264,8 +273,10 @@ A parent can request a recurring weekly booking:
 
 ---
 
-## 9. Calendar Integration (Future Enhancement)
+## 9. Calendar Integration (Deferred Scope)
 
-- **Google Calendar sync:** Teachers can sync availability and bookings with Google Calendar via OAuth
-- **iCal export:** Parents and teachers can export bookings as `.ics` file for import into any calendar app
-- **Outlook integration:** Support for Microsoft 365 calendar sync
+Current product decision as of March 30, 2026:
+
+- FundaConnect does **not** currently implement Google Calendar sync, Outlook sync, or `.ics` export
+- The supported scheduling model is in-app availability, blocked dates, reminders, rescheduling, and no-show handling
+- External calendar integrations should only be added if they become a validated delivery requirement, because they introduce OAuth, sync-conflict, and support complexity that the current product does not need

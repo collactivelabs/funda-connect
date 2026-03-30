@@ -298,7 +298,7 @@ South Africa's load-shedding is a key operational risk. Mitigation strategies:
 | **Hosting** | Cloud hosting (AWS/Hetzner) not affected by domestic load-shedding |
 | **Teachers** | Onboarding guide recommends UPS/inverter + mobile data backup |
 | **Platform** | Auto-detection of lesson disruption; auto-reschedule option |
-| **Payments** | PayFast/Ozow operate on redundant infrastructure |
+| **Payments** | PayFast operates on redundant infrastructure |
 | **Communication** | SMS notifications work without internet (teacher can be reached even during outage) |
 
 ---

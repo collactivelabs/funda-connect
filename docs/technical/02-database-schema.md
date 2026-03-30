@@ -270,44 +270,47 @@ CREATE INDEX idx_as_day ON availability_slots (day_of_week);
 
 ### 2.9 `bookings`
 
-Individual lesson bookings.
+Individual lesson bookings. Weekly series are represented by one paid root booking plus child bookings linked back through `recurring_booking_id`; there is no separate `recurring_bookings` table in the current implementation.
 
 ```sql
 CREATE TABLE bookings (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    booking_number      VARCHAR(20) NOT NULL UNIQUE,    -- human-readable: FC-20260325-A1B2
     parent_id           UUID NOT NULL REFERENCES parent_profiles(id),
     learner_id          UUID NOT NULL REFERENCES learners(id),
     teacher_id          UUID NOT NULL REFERENCES teacher_profiles(id),
     subject_id          UUID NOT NULL REFERENCES subjects(id),
-    grade_level_id      UUID NOT NULL REFERENCES grade_levels(id),
-    curriculum_id       UUID NOT NULL REFERENCES curricula(id),
-    recurring_booking_id UUID REFERENCES recurring_bookings(id),
+    recurring_booking_id UUID,
 
-    scheduled_date      DATE NOT NULL,
-    start_time          TIME NOT NULL,
-    end_time            TIME NOT NULL,
+    scheduled_at        TIMESTAMPTZ NOT NULL,
     duration_minutes    INTEGER NOT NULL DEFAULT 60,
+    hold_expires_at     TIMESTAMPTZ,
 
     status              VARCHAR(30) NOT NULL DEFAULT 'pending_payment'
         CHECK (status IN (
             'pending_payment', 'confirmed', 'in_progress',
-            'completed', 'cancelled_by_parent', 'cancelled_by_teacher',
+            'completed', 'reviewed', 'expired', 'cancelled',
             'no_show_parent', 'no_show_teacher', 'disputed'
         )),
 
-    lesson_rate_cents   INTEGER NOT NULL,               -- snapshot of rate at booking time
-    platform_fee_cents  INTEGER NOT NULL,               -- commission amount
-    teacher_payout_cents INTEGER NOT NULL,              -- rate minus commission
+    amount_cents        INTEGER NOT NULL,
+    commission_cents    INTEGER NOT NULL,
+    teacher_payout_cents INTEGER NOT NULL,
 
-    meeting_link        TEXT,                           -- Google Meet / Jitsi URL
-    lesson_notes        TEXT,                           -- teacher post-lesson notes
-    topics_covered      UUID[],                        -- references to topics table
+    video_room_url      TEXT,
+    is_trial            BOOLEAN DEFAULT FALSE,
+    is_recurring        BOOLEAN DEFAULT FALSE,
+    parent_notes        TEXT,
+    lesson_notes        TEXT,
+    topics_covered      TEXT[],
 
-    parent_rating       INTEGER CHECK (parent_rating BETWEEN 1 AND 5),
+    started_at          TIMESTAMPTZ,
     cancelled_at        TIMESTAMPTZ,
+    cancelled_by_role   VARCHAR(20),
     cancellation_reason TEXT,
     completed_at        TIMESTAMPTZ,
+    no_show_reported_at TIMESTAMPTZ,
+    no_show_reported_by_role VARCHAR(20),
+    no_show_reason      TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -316,36 +319,12 @@ CREATE INDEX idx_bookings_parent ON bookings (parent_id);
 CREATE INDEX idx_bookings_teacher ON bookings (teacher_id);
 CREATE INDEX idx_bookings_learner ON bookings (learner_id);
 CREATE INDEX idx_bookings_status ON bookings (status);
-CREATE INDEX idx_bookings_date ON bookings (scheduled_date);
-CREATE INDEX idx_bookings_number ON bookings (booking_number);
+CREATE INDEX idx_bookings_scheduled_at ON bookings (scheduled_at);
 ```
 
 ---
 
-### 2.10 `recurring_bookings`
-
-Weekly recurring lesson series.
-
-```sql
-CREATE TABLE recurring_bookings (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    parent_id       UUID NOT NULL REFERENCES parent_profiles(id),
-    learner_id      UUID NOT NULL REFERENCES learners(id),
-    teacher_id      UUID NOT NULL REFERENCES teacher_profiles(id),
-    subject_id      UUID NOT NULL REFERENCES subjects(id),
-    day_of_week     INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
-    start_time      TIME NOT NULL,
-    end_time        TIME NOT NULL,
-    start_date      DATE NOT NULL,
-    end_date        DATE,                              -- NULL = indefinite
-    is_active       BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-
----
-
-### 2.11 `payments`
+### 2.10 `payments`
 
 Payment transactions linked to bookings.
 
@@ -359,7 +338,7 @@ CREATE TABLE payments (
     status              VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'refunded', 'partially_refunded')),
     gateway             VARCHAR(20) NOT NULL DEFAULT 'payfast'
-        CHECK (gateway IN ('payfast', 'ozow', 'manual')),
+        CHECK (gateway IN ('payfast', 'manual')),
     gateway_payment_id  VARCHAR(255),                  -- PayFast m_payment_id
     gateway_reference   VARCHAR(255),                  -- PayFast pf_payment_id
     payment_method      VARCHAR(50),                   -- 'credit_card', 'instant_eft', 'snapscan'
@@ -376,7 +355,7 @@ CREATE INDEX idx_payments_gateway_ref ON payments (gateway_reference);
 
 ---
 
-### 2.12 `teacher_payouts`
+### 2.11 `teacher_payouts`
 
 Batch payouts to teachers.
 
@@ -403,7 +382,7 @@ CREATE INDEX idx_payouts_status ON teacher_payouts (status);
 
 ---
 
-### 2.13 `reviews`
+### 2.12 `reviews`
 
 ```sql
 CREATE TABLE reviews (
@@ -426,7 +405,7 @@ CREATE INDEX idx_reviews_visible ON reviews (is_visible) WHERE is_visible = TRUE
 
 ---
 
-### 2.14 `notifications`
+### 2.13 `notifications`
 
 ```sql
 CREATE TABLE notifications (
@@ -450,7 +429,7 @@ CREATE INDEX idx_notif_unread ON notifications (user_id, is_read) WHERE is_read 
 
 ---
 
-### 2.15 `audit_log`
+### 2.14 `audit_log`
 
 Immutable audit trail for compliance (POPIA).
 
@@ -493,7 +472,7 @@ bookings *──1 teacher_profiles
 bookings *──1 subjects
 bookings 1──1 payments
 bookings 1──1 reviews
-bookings *──1 recurring_bookings
+bookings *──1 bookings (via recurring_booking_id for weekly series children)
 
 teacher_subjects *──1 subjects
 teacher_subjects *──1 grade_levels

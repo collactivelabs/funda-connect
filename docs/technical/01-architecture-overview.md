@@ -49,13 +49,15 @@ FundaConnect follows a **three-tier architecture** with a clear separation betwe
                                 │ External APIs  │
                                 │ ┌────────────┐ │
                                 │ │ PayFast    │ │
-                                │ │ Ozow       │ │
+                                │ │ Ozow*      │ │
                                 │ │ BulkSMS    │ │
                                 │ │ Google Meet│ │
                                 │ │ S3/B2      │ │
                                 │ └────────────┘ │
                                 └────────────────┘
 ```
+
+`*` Ozow remains in planned scope; PayFast is the currently implemented payment gateway.
 
 ---
 
@@ -160,7 +162,7 @@ Parent                FundaConnect API          Teacher          PayFast
 - Booking creation with payment initiation
 - Booking state machine: `pending_payment → confirmed → in_progress → completed → reviewed`
 - Cancellation with configurable refund policies
-- Recurring booking support (weekly series)
+- Prepaid weekly series support (root payment upfront, child bookings created after confirmation)
 - Rescheduling logic
 
 ### 4.4 Payments Module

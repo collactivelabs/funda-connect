@@ -11,6 +11,22 @@
 
 FundaConnect uses an **escrow-style payment flow**: parents pay upfront when booking a lesson. Funds are held by the platform until the lesson is confirmed as completed, at which point the platform commission is deducted and the teacher's share is queued for payout.
 
+Current gateway scope as of March 30, 2026:
+
+- **PayFast** is the implemented gateway in the live codebase
+- **Ozow** remains in planned scope, with implementation pending after PayFast
+
+### 1.1 Recurring Lesson Billing Decision
+
+Recurring lessons currently use a **prepaid weekly series** model.
+
+- Parents pick one weekly slot and a lesson count
+- PayFast charges the **full series amount once** at checkout
+- The root booking is paid first, then the remaining weekly child bookings are created after payment confirmation
+- Refunds, disputes, rescheduling, and payouts are still tracked per lesson
+
+True subscription rebilling for recurring lessons is intentionally deferred.
+
 ---
 
 ## 2. Payment Flow
@@ -297,19 +313,21 @@ async def process_refund(booking_id: UUID, refund_type: str):
 
 ---
 
-## 7. Subscription Billing
+## 7. Subscription Billing (Future Scope)
+
+This section refers to optional platform membership products, not recurring lesson billing. Recurring lessons themselves currently use the prepaid weekly series model described above.
 
 ### 7.1 Teacher Premium Subscription
 
 - **Amount:** R199–R499/month (tiered)
-- **Method:** PayFast recurring billing (subscription API)
+- **Method:** Future payment design decision if premium memberships are introduced; not implemented today
 - **Trial:** 14-day free trial for new teachers
 - **Cancellation:** Effective at end of current billing period
 
 ### 7.2 Parent FundaConnect Plus
 
 - **Amount:** R99/month
-- **Method:** PayFast recurring billing
+- **Method:** Future payment design decision if a parent membership product is introduced; not implemented today
 - **Benefits:** Progress tracking, portfolio tools, priority booking
 - **Cancellation:** Immediate, pro-rated refund option
 

@@ -391,7 +391,7 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
                 className="h-4 w-4 rounded border"
               />
               <Label htmlFor="recurring" className="cursor-pointer font-normal">
-                Recurring weekly
+                Weekly series (pay upfront)
               </Label>
             </div>
             {isRecurring && (
@@ -478,7 +478,7 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
             )}
             {isRecurring && bookableSlots.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                Only weekly start times available for all {recurringWeeks} weeks are shown.
+                Only start times available across all {recurringWeeks} weekly lessons are shown.
               </p>
             )}
           </div>
@@ -513,7 +513,7 @@ export function BookingDialog({ teacher, open, onOpenChange }: BookingDialogProp
               )}
               <p className="text-xs text-muted-foreground -mt-2">
                 {isRecurring
-                  ? "You'll be redirected to PayFast to pay for the full weekly series upfront. Your slot will be held for 15 minutes while payment is pending."
+                  ? "You'll be redirected to PayFast to pay for the full prepaid weekly series upfront. Your slot will be held for 15 minutes while payment is pending."
                   : "You'll be redirected to PayFast to complete payment. Your slot will be held for 15 minutes while payment is pending."}
               </p>
             </>
