@@ -32,7 +32,10 @@ class Learner(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "learners"
 
     parent_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("parent_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("parent_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)

@@ -18,7 +18,7 @@ This file tracks outstanding work identified by comparing the original technical
 - [x] Add frontend scripts for `lint`, `typecheck`, and `test` in `frontend/package.json`.
 - [x] Align `Makefile` frontend targets with actual package scripts.
 - [x] Add CI for linting, type-checking, and tests on push.
-- [ ] Clean up existing backend Ruff violations so backend lint can be enforced in CI.
+- [x] Clean up existing backend Ruff violations so backend lint can be enforced in CI.
 
 ## 2. Authentication And Sessions
 

@@ -11,12 +11,12 @@ from app.schemas.account import (
     AccountDeletionStatusResponse,
     UpdateMarketingConsentRequest,
 )
-from app.services.audit import create_audit_log
 from app.services.account_lifecycle import (
     export_account_data,
     get_account_deletion_status,
     request_account_deletion,
 )
+from app.services.audit import create_audit_log
 from app.services.consent import get_current_consents, update_marketing_consents
 
 router = APIRouter()

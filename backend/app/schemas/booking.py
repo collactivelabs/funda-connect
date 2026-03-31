@@ -3,15 +3,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ── Availability ──────────────────────────────────────────────
 
 
 class AvailabilitySlotResponse(BaseModel):
     id: UUID
     day_of_week: int  # 0=Mon … 6=Sun
-    start_time: str   # "09:00"
-    end_time: str     # "10:00"
+    start_time: str  # "09:00"
+    end_time: str  # "10:00"
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
@@ -27,18 +26,20 @@ class BlockedDateResponse(BaseModel):
 
 class SetAvailabilityRequest(BaseModel):
     """Replaces all slots for the teacher."""
+
     slots: list["SlotInput"]
 
 
 class SetBlockedDatesRequest(BaseModel):
     """Replaces all blocked dates for the teacher."""
+
     dates: list["BlockedDateInput"]
 
 
 class SlotInput(BaseModel):
     day_of_week: int = Field(..., ge=0, le=6)
     start_time: str  # "HH:MM"
-    end_time: str    # "HH:MM"
+    end_time: str  # "HH:MM"
 
 
 class BlockedDateInput(BaseModel):
@@ -133,7 +134,9 @@ class CreateBookingRequest(BaseModel):
     duration_minutes: int = Field(60, ge=30, le=180)
     is_trial: bool = False
     is_recurring: bool = False
-    recurring_weeks: int | None = Field(None, ge=2, le=12)  # total lessons in a prepaid weekly series
+    recurring_weeks: int | None = Field(
+        None, ge=2, le=12
+    )  # total lessons in a prepaid weekly series
     parent_notes: str | None = None
 
     @field_validator("duration_minutes")

@@ -13,9 +13,14 @@ class Payment(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "payments"
 
     booking_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), unique=True, nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("bookings.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
     )
-    gateway: Mapped[str] = mapped_column(String(20), nullable=False)  # payfast | manual (Ozow planned)
+    gateway: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # payfast | manual (Ozow planned)
     gateway_payment_id: Mapped[str | None] = mapped_column(String(100), index=True)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
@@ -24,8 +29,12 @@ class Payment(UUIDMixin, TimestampMixin, Base):
     gateway_metadata: Mapped[dict | None] = mapped_column(JSONB)  # raw ITN payload
 
     booking: Mapped["Booking"] = relationship("Booking", back_populates="payment")  # noqa: F821
-    payout: Mapped["Payout | None"] = relationship("Payout", back_populates="payment", uselist=False)
-    refund: Mapped["Refund | None"] = relationship("Refund", back_populates="payment", uselist=False)
+    payout: Mapped["Payout | None"] = relationship(
+        "Payout", back_populates="payment", uselist=False
+    )
+    refund: Mapped["Refund | None"] = relationship(
+        "Refund", back_populates="payment", uselist=False
+    )
 
 
 class Payout(UUIDMixin, TimestampMixin, Base):
@@ -51,7 +60,11 @@ class Refund(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "refunds"
 
     payment_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("payments.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
     )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
@@ -70,7 +83,11 @@ class Dispute(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "disputes"
 
     booking_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("bookings.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
     )
     raised_by_role: Mapped[str] = mapped_column(String(20), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
@@ -88,7 +105,10 @@ class VerificationDocument(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "verification_documents"
 
     teacher_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teacher_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("teacher_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     document_type: Mapped[str] = mapped_column(String(50), nullable=False)
     # id_document | qualification | sace_certificate | nrso_clearance | reference_letter

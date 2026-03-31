@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from starlette.requests import Request
 
 from app.models.consent import ConsentRecord
@@ -25,7 +26,9 @@ class FakeScalarResult:
 
 
 class FakeSession:
-    def __init__(self, current: ConsentRecord | None = None, records: list[ConsentRecord] | None = None):
+    def __init__(
+        self, current: ConsentRecord | None = None, records: list[ConsentRecord] | None = None
+    ):
         self.current = current
         self.records = records or []
 
@@ -56,7 +59,7 @@ def build_request() -> Request:
 
 
 def test_register_request_requires_terms_and_privacy_acceptance():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         RegisterRequest(
             email="user@example.com",
             password="password123",

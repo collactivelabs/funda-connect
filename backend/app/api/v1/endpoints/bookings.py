@@ -1,8 +1,8 @@
 import hashlib
 import urllib.parse
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -16,6 +16,18 @@ from app.models.booking import Booking
 from app.models.parent import Learner, ParentProfile
 from app.models.payment import Dispute, Payment, Payout, Refund
 from app.models.teacher import TeacherProfile
+from app.schemas.booking import (
+    BookingResponse,
+    CancelBookingRequest,
+    CompleteBookingRequest,
+    CreateBookingRequest,
+    PayFastRedirectResponse,
+    RaiseDisputeRequest,
+    ReportNoShowRequest,
+    RescheduleBookingRequest,
+)
+from app.services.audit import create_audit_log
+from app.services.notifications import create_in_app_notification
 from app.services.prepaid_series import (
     build_child_series_metadata,
     build_root_series_metadata,
@@ -23,8 +35,6 @@ from app.services.prepaid_series import (
     recurring_weeks_from_metadata,
     series_total_amount_cents,
 )
-from app.services.notifications import create_in_app_notification
-from app.services.audit import create_audit_log
 from app.services.rate_limits import (
     BOOKING_MUTATION_RATE_LIMIT,
     build_rate_limit_identifier,
@@ -37,28 +47,18 @@ from app.services.refunds import (
 )
 from app.services.scheduling import (
     acquire_slot_hold,
-    booking_lead_cutoff,
     booking_hold_expires_at,
+    booking_lead_cutoff,
     booking_occurrence_starts,
-    occurrences_touch_blocked_dates,
-    normalize_utc,
     get_teacher_booking_conflicts,
     is_duration_supported,
     is_slot_aligned,
     is_within_weekly_availability,
+    normalize_utc,
+    occurrences_touch_blocked_dates,
     release_slot_hold,
     slot_conflicts_with_bookings,
     slot_lock_keys,
-)
-from app.schemas.booking import (
-    BookingResponse,
-    CancelBookingRequest,
-    CompleteBookingRequest,
-    CreateBookingRequest,
-    PayFastRedirectResponse,
-    RaiseDisputeRequest,
-    ReportNoShowRequest,
-    RescheduleBookingRequest,
 )
 
 router = APIRouter()
@@ -159,10 +159,12 @@ def _payfast_parent_url(
 
     parsed = urllib.parse.urlsplit(base_url)
     query_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-    query_pairs.extend([
-        ("booking", str(booking.id)),
-        ("status", status_value),
-    ])
+    query_pairs.extend(
+        [
+            ("booking", str(booking.id)),
+            ("status", status_value),
+        ]
+    )
     return urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query_pairs)))
 
 
@@ -357,7 +359,9 @@ def _apply_booking_no_show(
         )
         if payment.payout and payment.payout.status in {"pending", "processing"}:
             payment.payout.status = "failed"
-            payment.payout.notes = f"Payout paused because the lesson was marked as {booking.status}."
+            payment.payout.notes = (
+                f"Payout paused because the lesson was marked as {booking.status}."
+            )
     elif payment.payout is None:
         db.add(
             Payout(
@@ -403,7 +407,9 @@ async def create_booking(
         select(ParentProfile).where(ParentProfile.user_id == UUID(payload["sub"]))
     )
     if not parent_profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent profile not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Parent profile not found"
+        )
 
     # Ownership: learner must belong to this parent
     learner = await db.get(Learner, body.learner_id)
@@ -423,14 +429,26 @@ async def create_booking(
     if not teacher:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
     if teacher.verification_status != "verified":
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Teacher is not verified")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Teacher is not verified"
+        )
     if not teacher.is_listed:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Teacher is not accepting bookings")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Teacher is not accepting bookings",
+        )
     if not teacher.hourly_rate_cents:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Teacher has not set a rate")
-    matching_subjects = [subject for subject in teacher.subjects if subject.subject_id == body.subject_id]
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Teacher has not set a rate"
+        )
+    matching_subjects = [
+        subject for subject in teacher.subjects if subject.subject_id == body.subject_id
+    ]
     if not matching_subjects:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Teacher does not teach this subject")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Teacher does not teach this subject",
+        )
     if not any(
         subject.curriculum == learner.curriculum
         and (not subject.grade_levels or learner.grade in subject.grade_levels)
@@ -441,7 +459,9 @@ async def create_booking(
             detail="Teacher does not teach this subject for the learner's grade and curriculum",
         )
     if not is_duration_supported(body.duration_minutes):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported lesson duration")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported lesson duration"
+        )
     if not is_slot_aligned(body.scheduled_at):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -457,7 +477,10 @@ async def create_booking(
     if occurrence_starts[0] < lead_cutoff:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Bookings must be made at least {settings.BOOKING_MIN_LEAD_MINUTES} minutes in advance",
+            detail=(
+                "Bookings must be made at least "
+                f"{settings.BOOKING_MIN_LEAD_MINUTES} minutes in advance"
+            ),
         )
 
     if not all(
@@ -568,7 +591,9 @@ async def create_booking(
                 "is_trial": booking.is_trial,
                 "is_recurring": booking.is_recurring,
                 "recurring_weeks": recurring_weeks,
-                "amount_cents": checkout_amount_cents(payment.amount_cents, payment.gateway_metadata),
+                "amount_cents": checkout_amount_cents(
+                    payment.amount_cents, payment.gateway_metadata
+                ),
             },
         )
         await db.commit()
@@ -613,16 +638,12 @@ async def list_my_bookings(
     )
 
     if role == "parent":
-        profile = await db.scalar(
-            select(ParentProfile).where(ParentProfile.user_id == user_id)
-        )
+        profile = await db.scalar(select(ParentProfile).where(ParentProfile.user_id == user_id))
         if not profile:
             return []
         result = await db.scalars(base_query.where(Booking.parent_id == profile.id))
     else:
-        profile = await db.scalar(
-            select(TeacherProfile).where(TeacherProfile.user_id == user_id)
-        )
+        profile = await db.scalar(select(TeacherProfile).where(TeacherProfile.user_id == user_id))
         if not profile:
             return []
         result = await db.scalars(base_query.where(Booking.teacher_id == profile.id))
@@ -661,9 +682,7 @@ async def reschedule_booking(
         detail="Too many booking changes. Please wait a moment and try again.",
     )
     booking = await db.scalar(
-        select(Booking)
-        .where(Booking.id == booking_id)
-        .options(selectinload(Booking.payment))
+        select(Booking).where(Booking.id == booking_id).options(selectinload(Booking.payment))
     )
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
@@ -706,7 +725,10 @@ async def reschedule_booking(
     if next_start < booking_lead_cutoff(now_utc):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Bookings must be made at least {settings.BOOKING_MIN_LEAD_MINUTES} minutes in advance",
+            detail=(
+                "Bookings must be made at least "
+                f"{settings.BOOKING_MIN_LEAD_MINUTES} minutes in advance"
+            ),
         )
 
     teacher = await db.scalar(
@@ -810,9 +832,15 @@ async def reschedule_booking(
         refreshed_booking,
         db,
         parent_title="Lesson rescheduled",
-        parent_body=f"Your lesson has been moved to {_lesson_time_label(refreshed_booking.scheduled_at)}.",
+        parent_body=(
+            "Your lesson has been moved to "
+            f"{_lesson_time_label(refreshed_booking.scheduled_at)}."
+        ),
         teacher_title="Lesson rescheduled",
-        teacher_body=f"This lesson has been moved to {_lesson_time_label(refreshed_booking.scheduled_at)}.",
+        teacher_body=(
+            "This lesson has been moved to "
+            f"{_lesson_time_label(refreshed_booking.scheduled_at)}."
+        ),
         notification_type="booking_rescheduled",
         metadata={"booking_id": str(refreshed_booking.id)},
     )
@@ -893,7 +921,9 @@ async def cancel_booking(
     # Best-effort room cleanup (fire-and-forget, don't block the response)
     if room_url:
         import asyncio
+
         from app.services.video import delete_room
+
         room_name = room_url.rstrip("/").split("/")[-1]
         asyncio.create_task(delete_room(room_name))
 
@@ -901,9 +931,15 @@ async def cancel_booking(
         booking,
         db,
         parent_title="Lesson cancelled",
-        parent_body=f"This lesson scheduled for {_lesson_time_label(booking.scheduled_at)} has been cancelled.",
+        parent_body=(
+            "This lesson scheduled for "
+            f"{_lesson_time_label(booking.scheduled_at)} has been cancelled."
+        ),
         teacher_title="Lesson cancelled",
-        teacher_body=f"This lesson scheduled for {_lesson_time_label(booking.scheduled_at)} has been cancelled.",
+        teacher_body=(
+            "This lesson scheduled for "
+            f"{_lesson_time_label(booking.scheduled_at)} has been cancelled."
+        ),
         notification_type="booking_cancelled",
         metadata={"booking_id": str(booking.id), "cancelled_by_role": actor_role},
     )
@@ -956,9 +992,7 @@ async def complete_booking(
 
     # Only the assigned teacher can mark complete
     user_id = UUID(payload["sub"])
-    profile = await db.scalar(
-        select(TeacherProfile).where(TeacherProfile.user_id == user_id)
-    )
+    profile = await db.scalar(select(TeacherProfile).where(TeacherProfile.user_id == user_id))
     if not profile or booking.teacher_id != profile.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
@@ -1010,9 +1044,15 @@ async def complete_booking(
         booking,
         db,
         parent_title="Lesson marked complete",
-        parent_body=f"Your lesson from {_lesson_time_label(booking.scheduled_at)} has been marked complete.",
+        parent_body=(
+            "Your lesson from "
+            f"{_lesson_time_label(booking.scheduled_at)} has been marked complete."
+        ),
         teacher_title="Lesson marked complete",
-        teacher_body=f"You marked the lesson from {_lesson_time_label(booking.scheduled_at)} as complete.",
+        teacher_body=(
+            "You marked the lesson from "
+            f"{_lesson_time_label(booking.scheduled_at)} as complete."
+        ),
         notification_type="booking_completed",
         metadata={"booking_id": str(booking.id)},
     )
@@ -1158,6 +1198,7 @@ async def report_booking_no_show(
 
     if room_url:
         import asyncio
+
         from app.services.video import delete_room
 
         room_name = room_url.rstrip("/").split("/")[-1]
@@ -1227,7 +1268,10 @@ async def raise_booking_dispute(
     if payout and payout.status == "paid":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="This booking can no longer be disputed because the payout has already been processed",
+            detail=(
+                "This booking can no longer be disputed because the payout has "
+                "already been processed"
+            ),
         )
 
     if payout and payout.status in {"pending", "processing"}:
@@ -1314,8 +1358,7 @@ async def cancel_booking_series(
             .where(
                 Booking.status == "confirmed",
                 Booking.scheduled_at > now,
-                (Booking.id == root_id)
-                | (Booking.recurring_booking_id == root_id),
+                (Booking.id == root_id) | (Booking.recurring_booking_id == root_id),
             )
             .options(
                 selectinload(Booking.payment).selectinload(Payment.payout),
@@ -1362,21 +1405,24 @@ async def cancel_booking_series(
 def _verify_payfast_signature(data: dict) -> bool:
     """Verify the PayFast ITN signature against the posted data."""
     received_sig = data.get("signature", "")
-    fields = {
-        key: str(value)
-        for key, value in data.items()
-        if key != "signature"
-    }
+    fields = {key: str(value) for key, value in data.items() if key != "signature"}
     expected = _payfast_signature(fields, settings.PAYFAST_PASSPHRASE)
     return expected == received_sig
 
 
 # PayFast valid source IPs (sandbox + production)
 _PAYFAST_VALID_IPS = {
-    "197.97.145.144", "197.97.145.145", "197.97.145.146", "197.97.145.147",
-    "204.93.204.23", "204.93.204.24", "204.93.204.25", "204.93.204.26",
+    "197.97.145.144",
+    "197.97.145.145",
+    "197.97.145.146",
+    "197.97.145.147",
+    "204.93.204.23",
+    "204.93.204.24",
+    "204.93.204.25",
+    "204.93.204.26",
     # Allow localhost for sandbox testing
-    "127.0.0.1", "::1",
+    "127.0.0.1",
+    "::1",
 }
 
 
@@ -1404,9 +1450,7 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing m_payment_id")
 
     booking = await db.scalar(
-        select(Booking)
-        .where(Booking.id == UUID(booking_id))
-        .options(selectinload(Booking.payment))
+        select(Booking).where(Booking.id == UUID(booking_id)).options(selectinload(Booking.payment))
     )
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
@@ -1531,7 +1575,10 @@ async def payfast_itn(request: Request, db: AsyncSession = Depends(get_db)):
             parent_title="Booking confirmed",
             parent_body=f"Your lesson for {_lesson_time_label(booking.scheduled_at)} is confirmed.",
             teacher_title="New lesson confirmed",
-            teacher_body=f"A lesson for {_lesson_time_label(booking.scheduled_at)} has been confirmed.",
+            teacher_body=(
+                "A lesson for "
+                f"{_lesson_time_label(booking.scheduled_at)} has been confirmed."
+            ),
             notification_type="booking_confirmed",
             metadata={"booking_id": str(booking.id)},
         )

@@ -19,10 +19,7 @@ def _normalize_audit_value(value):
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, Mapping):
-        return {
-            str(key): _normalize_audit_value(item)
-            for key, item in value.items()
-        }
+        return {str(key): _normalize_audit_value(item) for key, item in value.items()}
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [_normalize_audit_value(item) for item in value]
     return str(value)

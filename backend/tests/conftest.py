@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.database import Base, get_db
 from app.main import app
 
-TEST_DATABASE_URL = "postgresql+asyncpg://fundaconnect:fundaconnect@localhost:5432/fundaconnect_test"
+TEST_DATABASE_URL = (
+    "postgresql+asyncpg://fundaconnect:fundaconnect@localhost:5432/fundaconnect_test"
+)
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 TestingSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)

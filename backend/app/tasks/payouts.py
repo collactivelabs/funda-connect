@@ -13,9 +13,11 @@ def process_weekly_payouts() -> None:
     Create Payout records for all completed bookings that haven't been paid out yet.
     Runs weekly via Celery Beat.
     """
+
     async def _run():
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
         from app.core.config import settings
         from app.models.booking import Booking
         from app.models.payment import Payment, Payout
@@ -24,16 +26,18 @@ def process_weekly_payouts() -> None:
         created = 0
         try:
             async with AsyncSession(engine) as db:
-                rows = (await db.execute(
-                    select(Booking, Payment)
-                    .join(Payment, Payment.booking_id == Booking.id)
-                    .outerjoin(Payout, Payout.payment_id == Payment.id)
-                    .where(
-                        Booking.status.in_(["completed", "reviewed"]),
-                        Payment.status == "complete",
-                        Payout.id.is_(None),
+                rows = (
+                    await db.execute(
+                        select(Booking, Payment)
+                        .join(Payment, Payment.booking_id == Booking.id)
+                        .outerjoin(Payout, Payout.payment_id == Payment.id)
+                        .where(
+                            Booking.status.in_(["completed", "reviewed"]),
+                            Payment.status == "complete",
+                            Payout.id.is_(None),
+                        )
                     )
-                )).all()
+                ).all()
 
                 for booking, payment in rows:
                     payout = Payout(

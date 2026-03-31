@@ -1,5 +1,5 @@
-from datetime import UTC, datetime
 from collections import defaultdict
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,16 +7,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.booking import Booking
 from app.core.deps import get_db, require_parent
+from app.models.booking import Booking
 from app.models.parent import Learner, ParentProfile
 from app.models.payment import Payment
 from app.models.teacher import TeacherProfile
 from app.schemas.parent import (
     CreateLearnerRequest,
-    LearnerResponse,
     LearnerProgressResponse,
     LearnerReportResponse,
+    LearnerResponse,
     ParentPaymentHistoryItemResponse,
     ParentPaymentHistoryResponse,
     ParentPaymentReceiptResponse,
@@ -30,8 +30,8 @@ from app.services.prepaid_series import (
     recurring_weeks_from_metadata,
     series_root_booking_id,
 )
-from app.services.reports import build_learner_report_reference
 from app.services.receipts import build_receipt_reference, net_paid_amount_cents
+from app.services.reports import build_learner_report_reference
 
 router = APIRouter()
 
@@ -41,7 +41,9 @@ async def _get_parent_profile(payload: dict, db: AsyncSession) -> ParentProfile:
         select(ParentProfile).where(ParentProfile.user_id == UUID(payload["sub"]))
     )
     if not profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent profile not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Parent profile not found"
+        )
     return profile
 
 
@@ -49,7 +51,9 @@ def _root_payment_for_group(payments: list[Payment], group_id: UUID) -> Payment:
     return next((payment for payment in payments if payment.booking_id == group_id), payments[0])
 
 
-def _build_grouped_payment_history(payments: list[Payment]) -> list[ParentPaymentHistoryItemResponse]:
+def _build_grouped_payment_history(
+    payments: list[Payment],
+) -> list[ParentPaymentHistoryItemResponse]:
     grouped: dict[UUID, list[Payment]] = defaultdict(list)
     order: list[UUID] = []
 
@@ -69,9 +73,7 @@ def _build_grouped_payment_history(payments: list[Payment]) -> list[ParentPaymen
         series_payments = grouped[group_id]
         root_payment = _root_payment_for_group(series_payments, group_id)
         refund_amount_cents = sum(
-            payment.refund.amount_cents
-            for payment in series_payments
-            if payment.refund
+            payment.refund.amount_cents for payment in series_payments if payment.refund
         )
         lessons_in_series = max(
             recurring_weeks_from_metadata(root_payment.gateway_metadata),
@@ -84,21 +86,23 @@ def _build_grouped_payment_history(payments: list[Payment]) -> list[ParentPaymen
                 booking_id=root_payment.booking_id,
                 gateway=root_payment.gateway,
                 gateway_payment_id=root_payment.gateway_payment_id,
-                amount_cents=checkout_amount_cents(root_payment.amount_cents, root_payment.gateway_metadata),
+                amount_cents=checkout_amount_cents(
+                    root_payment.amount_cents, root_payment.gateway_metadata
+                ),
                 status=aggregate_payment_status(payment.status for payment in series_payments),
                 paid_at=root_payment.paid_at,
                 created_at=root_payment.created_at,
                 booking_status=root_payment.booking.status,
                 scheduled_at=root_payment.booking.scheduled_at,
                 teacher_name=(
-                    f"{root_payment.booking.teacher.user.first_name} {root_payment.booking.teacher.user.last_name}"
+                    f"{root_payment.booking.teacher.user.first_name} "
+                    f"{root_payment.booking.teacher.user.last_name}"
                 ),
                 learner_name=root_payment.booking.learner.full_name,
                 subject_name=root_payment.booking.subject.name,
                 refund_amount_cents=refund_amount_cents,
                 refund_status=aggregate_refund_status(
-                    payment.refund.status if payment.refund else None
-                    for payment in series_payments
+                    payment.refund.status if payment.refund else None for payment in series_payments
                 ),
                 refund_requested_at=max(
                     (payment.refund.created_at for payment in series_payments if payment.refund),
@@ -172,7 +176,7 @@ async def get_learner_report(
     payload: dict = Depends(require_parent),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return a printable learner progress report for a learner owned by the authenticated parent."""
+    """Return a printable learner progress report for an authenticated parent's learner."""
     profile = await _get_parent_profile(payload, db)
     learner = await db.scalar(
         select(Learner).where(
@@ -219,7 +223,9 @@ async def list_payment_history(
             selectinload(Payment.refund),
             selectinload(Payment.booking).selectinload(Booking.learner),
             selectinload(Payment.booking).selectinload(Booking.subject),
-            selectinload(Payment.booking).selectinload(Booking.teacher).selectinload(TeacherProfile.user),
+            selectinload(Payment.booking)
+            .selectinload(Booking.teacher)
+            .selectinload(TeacherProfile.user),
         )
         .order_by(Payment.created_at.desc())
     )
@@ -267,10 +273,14 @@ async def get_payment_receipt(
         .where(Payment.id == payment_id, Booking.parent_id == profile.id)
         .options(
             selectinload(Payment.refund),
-            selectinload(Payment.booking).selectinload(Booking.parent).selectinload(ParentProfile.user),
+            selectinload(Payment.booking)
+            .selectinload(Booking.parent)
+            .selectinload(ParentProfile.user),
             selectinload(Payment.booking).selectinload(Booking.learner),
             selectinload(Payment.booking).selectinload(Booking.subject),
-            selectinload(Payment.booking).selectinload(Booking.teacher).selectinload(TeacherProfile.user),
+            selectinload(Payment.booking)
+            .selectinload(Booking.teacher)
+            .selectinload(TeacherProfile.user),
         )
     )
     if not payment:
@@ -288,10 +298,14 @@ async def get_payment_receipt(
         .where(Booking.parent_id == profile.id)
         .options(
             selectinload(Payment.refund),
-            selectinload(Payment.booking).selectinload(Booking.parent).selectinload(ParentProfile.user),
+            selectinload(Payment.booking)
+            .selectinload(Booking.parent)
+            .selectinload(ParentProfile.user),
             selectinload(Payment.booking).selectinload(Booking.learner),
             selectinload(Payment.booking).selectinload(Booking.subject),
-            selectinload(Payment.booking).selectinload(Booking.teacher).selectinload(TeacherProfile.user),
+            selectinload(Payment.booking)
+            .selectinload(Booking.teacher)
+            .selectinload(TeacherProfile.user),
         )
     )
     grouped_payments = [
@@ -318,7 +332,9 @@ async def get_payment_receipt(
         len(grouped_payments),
     )
     payment_status = aggregate_payment_status(candidate.status for candidate in grouped_payments)
-    charged_amount_cents = checkout_amount_cents(root_payment.amount_cents, root_payment.gateway_metadata)
+    charged_amount_cents = checkout_amount_cents(
+        root_payment.amount_cents, root_payment.gateway_metadata
+    )
 
     return ParentPaymentReceiptResponse(
         payment_id=root_payment.id,
@@ -331,9 +347,15 @@ async def get_payment_receipt(
         amount_cents=charged_amount_cents,
         refund_amount_cents=refund_amount_cents,
         net_paid_cents=net_paid_amount_cents(charged_amount_cents, refund_amount_cents),
-        parent_name=f"{root_payment.booking.parent.user.first_name} {root_payment.booking.parent.user.last_name}",
+        parent_name=(
+            f"{root_payment.booking.parent.user.first_name} "
+            f"{root_payment.booking.parent.user.last_name}"
+        ),
         parent_email=root_payment.booking.parent.user.email,
-        teacher_name=f"{root_payment.booking.teacher.user.first_name} {root_payment.booking.teacher.user.last_name}",
+        teacher_name=(
+            f"{root_payment.booking.teacher.user.first_name} "
+            f"{root_payment.booking.teacher.user.last_name}"
+        ),
         learner_name=root_payment.booking.learner.full_name,
         subject_name=root_payment.booking.subject.name,
         scheduled_at=root_payment.booking.scheduled_at,

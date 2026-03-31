@@ -1,6 +1,17 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import account, admin, auth, bookings, notifications, parents, reference_data, reviews, subjects, teachers
+from app.api.v1.endpoints import (
+    account,
+    admin,
+    auth,
+    bookings,
+    notifications,
+    parents,
+    reference_data,
+    reviews,
+    subjects,
+    teachers,
+)
 
 api_router = APIRouter()
 

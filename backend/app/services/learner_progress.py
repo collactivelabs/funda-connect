@@ -23,7 +23,8 @@ def build_learner_progress_summary(learner, bookings: list) -> LearnerProgressRe
     upcoming_lessons = sum(
         1
         for booking in bookings
-        if booking.status in _UPCOMING_BOOKING_STATUSES and normalize_utc(booking.scheduled_at) >= now_utc
+        if booking.status in _UPCOMING_BOOKING_STATUSES
+        and normalize_utc(booking.scheduled_at) >= now_utc
     )
 
     subject_stats: dict[str, dict] = defaultdict(
@@ -100,7 +101,9 @@ def build_learner_progress_summary(learner, bookings: list) -> LearnerProgressRe
                 subject_stats.values(),
                 key=lambda item: (
                     item["latest_lesson_at"] is None,
-                    normalize_utc(item["latest_lesson_at"]) if item["latest_lesson_at"] else datetime.min.replace(tzinfo=UTC),
+                    normalize_utc(item["latest_lesson_at"])
+                    if item["latest_lesson_at"]
+                    else datetime.min.replace(tzinfo=UTC),
                 ),
                 reverse=True,
             )

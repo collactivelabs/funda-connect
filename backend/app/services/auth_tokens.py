@@ -64,8 +64,7 @@ def _json_loads(value: str | None) -> dict[str, str] | None:
         return None
 
     return {
-        str(key): "" if raw_value is None else str(raw_value)
-        for key, raw_value in data.items()
+        str(key): "" if raw_value is None else str(raw_value) for key, raw_value in data.items()
     }
 
 
@@ -155,10 +154,12 @@ async def issue_refresh_session(
 
     await redis_client.set(
         _key(_REFRESH_PREFIX, jti),
-        _json_dumps({
-            "user_id": str(user_id),
-            "session_id": stable_session_id,
-        }),
+        _json_dumps(
+            {
+                "user_id": str(user_id),
+                "session_id": stable_session_id,
+            }
+        ),
         ex=ttl,
     )
     await redis_client.set(
@@ -343,10 +344,12 @@ async def rotate_refresh_session(
             await redis_client.delete(refresh_key)
             await redis_client.set(
                 used_key,
-                _json_dumps({
-                    "user_id": str(user_id),
-                    "session_id": session_id or "",
-                }),
+                _json_dumps(
+                    {
+                        "user_id": str(user_id),
+                        "session_id": session_id or "",
+                    }
+                ),
                 ex=_refresh_ttl_seconds(),
             )
             return await issue_refresh_session(

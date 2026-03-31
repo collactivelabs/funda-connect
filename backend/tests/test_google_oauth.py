@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from starlette.requests import Request
 
 from app.core.config import settings
@@ -44,9 +45,7 @@ class FakeRedis:
 
 class FakeSession:
     def __init__(self, existing_users: list[User] | None = None):
-        self.users_by_email = {
-            user.email: user for user in (existing_users or [])
-        }
+        self.users_by_email = {user.email: user for user in (existing_users or [])}
         self.added: list[object] = []
         self.consent_calls: list[dict[str, object]] = []
 
@@ -95,7 +94,7 @@ def build_request() -> Request:
 
 
 def test_google_oauth_start_request_requires_role_and_consents_for_register():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         GoogleOAuthStartRequest(flow="register")
 
 
@@ -108,9 +107,7 @@ async def test_google_oauth_state_is_one_time_use(monkeypatch):
 
     monkeypatch.setattr(google_oauth, "get_redis", fake_get_redis)
 
-    token = await issue_google_oauth_state(
-        GoogleOAuthState(flow="login", redirect_path="/teacher")
-    )
+    token = await issue_google_oauth_state(GoogleOAuthState(flow="login", redirect_path="/teacher"))
 
     first = await consume_google_oauth_state(token)
     second = await consume_google_oauth_state(token)
@@ -133,7 +130,9 @@ def test_build_google_authorization_url_uses_configured_callback(monkeypatch):
 
 
 def test_normalize_avatar_url_rejects_overly_long_values():
-    assert normalize_avatar_url(" https://example.com/avatar.png ") == "https://example.com/avatar.png"
+    assert (
+        normalize_avatar_url(" https://example.com/avatar.png ") == "https://example.com/avatar.png"
+    )
     assert normalize_avatar_url("x" * 2049) is None
 
 
@@ -141,7 +140,9 @@ def test_normalize_avatar_url_rejects_overly_long_values():
 async def test_resolve_google_oauth_user_registers_new_teacher_and_records_consents(monkeypatch):
     session = FakeSession()
     monkeypatch.setattr(google_oauth, "_find_user_by_email", fake_find_user_by_email)
-    monkeypatch.setattr(google_oauth, "record_registration_consents", fake_record_registration_consents)
+    monkeypatch.setattr(
+        google_oauth, "record_registration_consents", fake_record_registration_consents
+    )
 
     profile = GoogleOAuthProfile(
         subject="google-subject-1",

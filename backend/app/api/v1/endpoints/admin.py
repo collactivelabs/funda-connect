@@ -224,7 +224,9 @@ def _teacher_detail_item(teacher: TeacherProfile) -> TeacherVerificationDetail:
         ],
         documents=[
             VerificationDocumentResponse.model_validate(document)
-            for document in sorted(teacher.documents, key=lambda document: document.created_at, reverse=True)
+            for document in sorted(
+                teacher.documents, key=lambda document: document.created_at, reverse=True
+            )
         ],
         approved_document_count=counts["approved"],
         pending_document_count=counts["pending"],
@@ -324,10 +326,7 @@ async def get_stats(
         or 0
     )
     open_disputes = (
-        await db.scalar(
-            select(func.count(Dispute.id)).where(Dispute.status == "open")
-        )
-        or 0
+        await db.scalar(select(func.count(Dispute.id)).where(Dispute.status == "open")) or 0
     )
 
     return StatsResponse(
@@ -475,7 +474,10 @@ async def verify_teacher(
         if not has_approved_all_required_documents(teacher.documents):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="All required verification documents must be approved before verifying this teacher",
+                detail=(
+                    "All required verification documents must be approved before "
+                    "verifying this teacher"
+                ),
             )
         teacher.verification_status = "verified"
         teacher.is_listed = True
@@ -570,11 +572,7 @@ async def list_payouts(
     _payload: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    query = (
-        select(Payout)
-        .options(selectinload(Payout.payment))
-        .order_by(Payout.created_at.desc())
-    )
+    query = select(Payout).options(selectinload(Payout.payment)).order_by(Payout.created_at.desc())
     if payout_status:
         query = query.where(Payout.status == payout_status)
 
@@ -594,7 +592,8 @@ async def list_payouts(
             id=payout.id,
             teacher_id=payout.teacher_id,
             teacher_name=(
-                f"{teacher_map[payout.teacher_id].user.first_name} {teacher_map[payout.teacher_id].user.last_name}"
+                f"{teacher_map[payout.teacher_id].user.first_name} "
+                f"{teacher_map[payout.teacher_id].user.last_name}"
                 if payout.teacher_id in teacher_map
                 else "Unknown"
             ),
@@ -706,10 +705,12 @@ async def list_refunds(
             payment_id=refund.payment_id,
             booking_id=refund.payment.booking_id,
             parent_name=(
-                f"{refund.payment.booking.parent.user.first_name} {refund.payment.booking.parent.user.last_name}"
+                f"{refund.payment.booking.parent.user.first_name} "
+                f"{refund.payment.booking.parent.user.last_name}"
             ),
             teacher_name=(
-                f"{refund.payment.booking.teacher.user.first_name} {refund.payment.booking.teacher.user.last_name}"
+                f"{refund.payment.booking.teacher.user.first_name} "
+                f"{refund.payment.booking.teacher.user.last_name}"
             ),
             amount_cents=refund.amount_cents,
             status=refund.status,
@@ -764,7 +765,9 @@ async def update_refund(
             refund.amount_cents,
         )
         parent_user_id = await db.scalar(
-            select(ParentProfile.user_id).where(ParentProfile.id == refund.payment.booking.parent_id)
+            select(ParentProfile.user_id).where(
+                ParentProfile.id == refund.payment.booking.parent_id
+            )
         )
         if parent_user_id:
             await create_in_app_notification(
@@ -773,7 +776,10 @@ async def update_refund(
                 notification_type="refund_processed",
                 title="Refund processed",
                 body=f"Your refund of R{refund.amount_cents / 100:.2f} has been processed.",
-                metadata={"refund_id": str(refund.id), "booking_id": str(refund.payment.booking_id)},
+                metadata={
+                    "refund_id": str(refund.id),
+                    "booking_id": str(refund.payment.booking_id),
+                },
             )
         from app.tasks.notifications import send_refund_notification
 
@@ -811,8 +817,12 @@ async def list_disputes(
     query = (
         select(Dispute)
         .options(
-            selectinload(Dispute.booking).selectinload(Booking.parent).selectinload(ParentProfile.user),
-            selectinload(Dispute.booking).selectinload(Booking.teacher).selectinload(TeacherProfile.user),
+            selectinload(Dispute.booking)
+            .selectinload(Booking.parent)
+            .selectinload(ParentProfile.user),
+            selectinload(Dispute.booking)
+            .selectinload(Booking.teacher)
+            .selectinload(TeacherProfile.user),
             selectinload(Dispute.booking).selectinload(Booking.subject),
         )
         .order_by(Dispute.created_at.desc())
@@ -831,7 +841,8 @@ async def list_disputes(
                 f"{dispute.booking.parent.user.first_name} {dispute.booking.parent.user.last_name}"
             ),
             teacher_name=(
-                f"{dispute.booking.teacher.user.first_name} {dispute.booking.teacher.user.last_name}"
+                f"{dispute.booking.teacher.user.first_name} "
+                f"{dispute.booking.teacher.user.last_name}"
             ),
             subject_name=dispute.booking.subject.name,
             scheduled_at=dispute.booking.scheduled_at,
@@ -874,7 +885,9 @@ async def resolve_dispute(
     if not dispute:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found")
     if dispute.status != "open":
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Dispute is already resolved")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Dispute is already resolved"
+        )
 
     booking = dispute.booking
     payment = booking.payment
@@ -919,7 +932,10 @@ async def resolve_dispute(
                     reason=dispute.reason,
                     requested_by_role="admin",
                     policy_code="dispute_refund",
-                    notes="Created from dispute resolution. Process manually in PayFast and then mark refunded.",
+                    notes=(
+                        "Created from dispute resolution. Process manually in "
+                        "PayFast and then mark refunded."
+                    ),
                 )
                 db.add(refund)
             else:
@@ -928,7 +944,10 @@ async def resolve_dispute(
                 refund.reason = dispute.reason
                 refund.requested_by_role = "admin"
                 refund.policy_code = "dispute_refund"
-                refund.notes = "Created from dispute resolution. Process manually in PayFast and then mark refunded."
+                refund.notes = (
+                    "Created from dispute resolution. Process manually in "
+                    "PayFast and then mark refunded."
+                )
 
     parent_user_id = await db.scalar(
         select(ParentProfile.user_id).where(ParentProfile.id == booking.parent_id)
@@ -948,7 +967,11 @@ async def resolve_dispute(
                     if body.resolution == "completed"
                     else "An admin resolved the dispute and moved it into the refund flow."
                 ),
-                metadata={"dispute_id": str(dispute.id), "booking_id": str(booking.id), "resolution": body.resolution},
+                metadata={
+                    "dispute_id": str(dispute.id),
+                    "booking_id": str(booking.id),
+                    "resolution": body.resolution,
+                },
             )
 
     await create_audit_log(

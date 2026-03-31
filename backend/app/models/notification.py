@@ -36,7 +36,11 @@ class NotificationPreference(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "notification_preferences"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
     )
     in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

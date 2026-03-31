@@ -23,5 +23,7 @@ class ConsentRecord(UUIDMixin, Base):
     version: Mapped[str] = mapped_column(String(50), nullable=False)
     ip_address: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str | None] = mapped_column(String(500))
-    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    granted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

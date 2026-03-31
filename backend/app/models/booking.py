@@ -1,5 +1,6 @@
 import uuid
-from datetime import date as date_type, datetime
+from datetime import date as date_type
+from datetime import datetime
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
@@ -15,11 +16,14 @@ class AvailabilitySlot(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "availability_slots"
 
     teacher_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teacher_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("teacher_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)  # 0=Monday, 6=Sunday
     start_time: Mapped[str] = mapped_column(String(5), nullable=False)  # "09:00" (SAST)
-    end_time: Mapped[str] = mapped_column(String(5), nullable=False)    # "10:00" (SAST)
+    end_time: Mapped[str] = mapped_column(String(5), nullable=False)  # "10:00" (SAST)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     teacher: Mapped["TeacherProfile"] = relationship(  # noqa: F821
@@ -31,12 +35,13 @@ class BlockedDate(UUIDMixin, TimestampMixin, Base):
     """Teacher dates that should not accept bookings."""
 
     __tablename__ = "blocked_dates"
-    __table_args__ = (
-        UniqueConstraint("teacher_id", "date", name="uq_blocked_dates_teacher_date"),
-    )
+    __table_args__ = (UniqueConstraint("teacher_id", "date", name="uq_blocked_dates_teacher_date"),)
 
     teacher_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teacher_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("teacher_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
     reason: Mapped[str | None] = mapped_column(String(255))
@@ -63,7 +68,9 @@ class Booking(UUIDMixin, TimestampMixin, Base):
     )
 
     # Scheduling
-    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 

@@ -2,6 +2,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.security import hash_password
 from app.models.notification import Notification, NotificationDelivery, NotificationPreference
 from app.models.user import User
 from app.services.notifications import (
@@ -10,7 +11,6 @@ from app.services.notifications import (
     get_or_create_notification_preferences,
     validate_notification_preference_channels,
 )
-from app.core.security import hash_password
 
 
 class FakeSession:
@@ -134,7 +134,9 @@ def test_validate_notification_preferences_rejects_sms_without_provider(monkeypa
         validate_notification_preference_channels(user=user, sms_enabled=True)
 
 
-def test_validate_notification_preferences_allows_sms_when_phone_and_provider_available(monkeypatch):
+def test_validate_notification_preferences_allows_sms_when_phone_and_provider_available(
+    monkeypatch,
+):
     user = _build_user(phone="+27821234567")
     monkeypatch.setattr("app.services.notifications.sms_provider_configured", lambda: True)
 

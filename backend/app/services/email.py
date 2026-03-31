@@ -2,6 +2,7 @@
 Email sending service using the `emails` package + stdlib smtplib.
 All sends are synchronous so they can be called from Celery workers.
 """
+
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -41,6 +42,7 @@ def _send(to: str, subject: str, html_body: str) -> None:
 
 # ── Template helpers ──────────────────────────────────────────
 
+
 def _base(content: str) -> str:
     """Minimal HTML wrapper so emails render cleanly in all clients."""
     return f"""<!DOCTYPE html>
@@ -76,6 +78,7 @@ def _base(content: str) -> str:
 
 # ── Email builders ────────────────────────────────────────────
 
+
 def booking_confirmation_parent(
     to: str,
     parent_name: str,
@@ -98,7 +101,9 @@ def booking_confirmation_parent(
   <p><strong>Amount paid:</strong> {amount}</p>
 </div>
 <a class="btn" href="https://fundaconnect.co.za/parent">View my lessons</a>
-<p style="margin-top:24px;font-size:13px;color:#6b7280;">Booking reference: {booking_id[:8].upper()}</p>
+<p style="margin-top:24px;font-size:13px;color:#6b7280;">
+  Booking reference: {booking_id[:8].upper()}
+</p>
 """
     _send(to, "Your FundaConnect lesson is confirmed", _base(content))
 
@@ -139,7 +144,9 @@ def verification_approved(to: str, teacher_name: str) -> None:
 
 
 def verification_rejected(to: str, teacher_name: str, notes: str | None) -> None:
-    notes_html = f"<div class='box'><p><strong>Reviewer notes:</strong> {notes}</p></div>" if notes else ""
+    notes_html = (
+        f"<div class='box'><p><strong>Reviewer notes:</strong> {notes}</p></div>" if notes else ""
+    )
     content = f"""
 <h2>Verification update</h2>
 <p>Hi {teacher_name}, unfortunately your verification was not approved at this time.</p>
@@ -166,7 +173,9 @@ def verification_submitted_admin(teacher_name: str, teacher_id: str, document_co
     _send(settings.EMAIL_FROM, "Teacher verification submission — action required", _base(content))
 
 
-def payout_processed(to: str, teacher_name: str, amount_cents: int, bank_reference: str | None) -> None:
+def payout_processed(
+    to: str, teacher_name: str, amount_cents: int, bank_reference: str | None
+) -> None:
     amount = f"R{amount_cents / 100:.2f}"
     ref_html = f"<p><strong>Bank reference:</strong> {bank_reference}</p>" if bank_reference else ""
     content = f"""
@@ -203,7 +212,9 @@ def email_verification_link(to: str, first_name: str, verify_url: str) -> None:
 <p>Hi {first_name}, welcome to FundaConnect.</p>
 <p>Please verify your email address to secure your account.</p>
 <a class="btn" href="{verify_url}">Verify my email</a>
-<p style="margin-top:24px;font-size:13px;color:#6b7280;">If the button does not work, copy and paste this link into your browser:</p>
+<p style="margin-top:24px;font-size:13px;color:#6b7280;">
+  If the button does not work, copy and paste this link into your browser:
+</p>
 <p style="font-size:13px;word-break:break-all;color:#6b7280;">{verify_url}</p>
 """
     _send(to, "Verify your FundaConnect email address", _base(content))
@@ -214,7 +225,9 @@ def password_reset_link(to: str, first_name: str, reset_url: str) -> None:
 <h2>Reset your password</h2>
 <p>Hi {first_name}, we received a request to reset your FundaConnect password.</p>
 <a class="btn" href="{reset_url}">Choose a new password</a>
-<p style="margin-top:24px;font-size:13px;color:#6b7280;">If you did not request this, you can ignore this email.</p>
+<p style="margin-top:24px;font-size:13px;color:#6b7280;">
+  If you did not request this, you can ignore this email.
+</p>
 <p style="font-size:13px;word-break:break-all;color:#6b7280;">{reset_url}</p>
 """
     _send(to, "Reset your FundaConnect password", _base(content))

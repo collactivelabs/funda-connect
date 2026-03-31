@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,12 +25,30 @@ _SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
 }
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    try:
+        async with AsyncSessionLocal() as session:
+            indexed_count = await rebuild_teacher_search_index(session)
+        logger.info("teacher_search.startup_sync.complete", indexed_count=indexed_count)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("teacher_search.startup_sync.failed", error=str(exc))
+
+    try:
+        yield
+    finally:
+        await close_redis()
+        logger.info("app.shutdown")
+
+
 app = FastAPI(
     title="FundaConnect API",
     description="Connecting South African teachers with homeschooling families",
     version="0.1.0",
     docs_url="/docs" if not settings.is_production else None,
     redoc_url="/redoc" if not settings.is_production else None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -64,19 +85,3 @@ async def readiness_check():
     report = await build_readiness_report()
     status_code = 200 if report["status"] == "ok" else 503
     return JSONResponse(status_code=status_code, content=report)
-
-
-@app.on_event("startup")
-async def on_startup():
-    try:
-        async with AsyncSessionLocal() as session:
-            indexed_count = await rebuild_teacher_search_index(session)
-        logger.info("teacher_search.startup_sync.complete", indexed_count=indexed_count)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("teacher_search.startup_sync.failed", error=str(exc))
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    await close_redis()
-    logger.info("app.shutdown")

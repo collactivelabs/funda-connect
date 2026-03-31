@@ -3,7 +3,6 @@ from datetime import datetime
 
 from app.models.booking import Booking
 
-
 FULL_REFUND_THRESHOLD_HOURS = 24
 NO_REFUND_THRESHOLD_HOURS = 2
 

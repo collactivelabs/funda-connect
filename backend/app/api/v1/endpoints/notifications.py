@@ -23,14 +23,14 @@ from app.services.notifications import (
     get_notification_preferences_snapshot,
     get_or_create_notification_preferences,
     list_notification_deliveries_for_user,
-    notification_to_response,
     notification_delivery_to_response,
+    notification_to_response,
     validate_notification_preference_channels,
 )
 from app.services.push import (
+    deactivate_push_subscription,
     has_active_push_subscription,
     upsert_push_subscription,
-    deactivate_push_subscription,
     web_push_supported_response,
 )
 
@@ -60,7 +60,9 @@ async def list_notifications(
         )
     )
     return NotificationListResponse(
-        items=[notification_to_response(notification) for notification in notifications_result.all()],
+        items=[
+            notification_to_response(notification) for notification in notifications_result.all()
+        ],
         unread_count=unread_count or 0,
     )
 
@@ -117,7 +119,8 @@ async def update_notification_preferences(
         detail = str(exc)
         status_code = (
             status.HTTP_503_SERVICE_UNAVAILABLE
-            if detail in {
+            if detail
+            in {
                 "SMS delivery is not configured for this environment yet.",
                 "Push notifications are not configured for this environment yet.",
             }

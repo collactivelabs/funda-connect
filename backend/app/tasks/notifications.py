@@ -510,6 +510,7 @@ def send_transactional_push(
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def send_booking_confirmation(self, booking_id: str) -> None:
     """Send confirmation emails to both parent and teacher after payment."""
+
     async def _run():
         from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -538,7 +539,9 @@ def send_booking_confirmation(self, booking_id: str) -> None:
                 teacher_profile = await db.get(TeacherProfile, booking.teacher_id)
                 subject = await db.get(Subject, booking.subject_id)
                 if not parent_profile or not teacher_profile:
-                    logger.warning("send_booking_confirmation.participants_missing", booking_id=booking_id)
+                    logger.warning(
+                        "send_booking_confirmation.participants_missing", booking_id=booking_id
+                    )
                     return
 
                 parent_user = await db.get(User, parent_profile.user_id)
@@ -769,14 +772,18 @@ def send_booking_confirmation(self, booking_id: str) -> None:
         logger.info("send_booking_confirmation.done", booking_id=booking_id)
     except Exception as exc:
         logger.error("send_booking_confirmation.error", booking_id=booking_id, error=str(exc))
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=120)
-def notify_teacher_verification_result(self, teacher_id: str, new_status: str, notes: str | None = None) -> None:
+def notify_teacher_verification_result(
+    self, teacher_id: str, new_status: str, notes: str | None = None
+) -> None:
     """Notify teacher of verification approval or rejection."""
+
     async def _run():
         from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
         from app.core.config import settings
         from app.models.teacher import TeacherProfile
         from app.models.user import User
@@ -800,7 +807,9 @@ def notify_teacher_verification_result(self, teacher_id: str, new_status: str, n
                     "suspended": "suspended",
                 }.get(new_status, new_status.replace("_", " "))
                 body = f"Your verification status is now {status_label}."
-                email_enabled = await notifications_enabled_for_channel(db, user.id, channel="email")
+                email_enabled = await notifications_enabled_for_channel(
+                    db, user.id, channel="email"
+                )
                 if new_status == "verified":
                     if email_enabled:
                         try:
@@ -847,7 +856,9 @@ def notify_teacher_verification_result(self, teacher_id: str, new_status: str, n
                 elif new_status in ("rejected", "suspended"):
                     if email_enabled:
                         try:
-                            verification_rejected(to=user.email, teacher_name=user.first_name, notes=notes)
+                            verification_rejected(
+                                to=user.email, teacher_name=user.first_name, notes=notes
+                            )
                             await _record_delivery(
                                 db,
                                 user_id=user.id,
@@ -887,7 +898,9 @@ def notify_teacher_verification_result(self, teacher_id: str, new_status: str, n
                             provider="smtp",
                             error_message="Channel disabled by user preferences.",
                         )
-                if user.phone and await notifications_enabled_for_channel(db, user.id, channel="sms"):
+                if user.phone and await notifications_enabled_for_channel(
+                    db, user.id, channel="sms"
+                ):
                     _queue_sms_delivery(
                         user_id=user.id,
                         to=user.phone,
@@ -929,18 +942,24 @@ def notify_teacher_verification_result(self, teacher_id: str, new_status: str, n
 
     try:
         asyncio.run(_run())
-        logger.info("notify_teacher_verification_result.done", teacher_id=teacher_id, status=new_status)
+        logger.info(
+            "notify_teacher_verification_result.done", teacher_id=teacher_id, status=new_status
+        )
     except Exception as exc:
-        logger.error("notify_teacher_verification_result.error", teacher_id=teacher_id, error=str(exc))
-        raise self.retry(exc=exc)
+        logger.error(
+            "notify_teacher_verification_result.error", teacher_id=teacher_id, error=str(exc)
+        )
+        raise self.retry(exc=exc) from exc
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=120)
 def notify_admin_verification_submitted(self, teacher_id: str) -> None:
     """Alert admin team when a teacher uploads documents."""
+
     async def _run():
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
         from app.core.config import settings
         from app.models.payment import VerificationDocument
         from app.models.teacher import TeacherProfile
@@ -957,7 +976,9 @@ def notify_admin_verification_submitted(self, teacher_id: str) -> None:
                 if not user:
                     return
                 result = await db.scalars(
-                    select(VerificationDocument).where(VerificationDocument.teacher_id == teacher.id)
+                    select(VerificationDocument).where(
+                        VerificationDocument.teacher_id == teacher.id
+                    )
                 )
                 doc_count = len(result.all())
                 verification_submitted_admin(
@@ -972,15 +993,19 @@ def notify_admin_verification_submitted(self, teacher_id: str) -> None:
         asyncio.run(_run())
         logger.info("notify_admin_verification_submitted.done", teacher_id=teacher_id)
     except Exception as exc:
-        logger.error("notify_admin_verification_submitted.error", teacher_id=teacher_id, error=str(exc))
-        raise self.retry(exc=exc)
+        logger.error(
+            "notify_admin_verification_submitted.error", teacher_id=teacher_id, error=str(exc)
+        )
+        raise self.retry(exc=exc) from exc
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def send_payout_notification(self, payout_id: str) -> None:
     """Notify teacher when their payout has been marked as paid."""
+
     async def _run():
         from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
         from app.core.config import settings
         from app.models.payment import Payout
         from app.models.teacher import TeacherProfile
@@ -1050,7 +1075,9 @@ def send_payout_notification(self, payout_id: str) -> None:
                         provider="smtp",
                         error_message="Channel disabled by user preferences.",
                     )
-                if user.phone and await notifications_enabled_for_channel(db, user.id, channel="sms"):
+                if user.phone and await notifications_enabled_for_channel(
+                    db, user.id, channel="sms"
+                ):
                     _queue_sms_delivery(
                         user_id=user.id,
                         to=user.phone,
@@ -1100,12 +1127,13 @@ def send_payout_notification(self, payout_id: str) -> None:
         logger.info("send_payout_notification.done", payout_id=payout_id)
     except Exception as exc:
         logger.error("send_payout_notification.error", payout_id=payout_id, error=str(exc))
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def send_refund_notification(self, refund_id: str) -> None:
     """Notify parent when a refund has been marked as processed."""
+
     async def _run():
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -1137,9 +1165,7 @@ def send_refund_notification(self, refund_id: str) -> None:
                     return
                 lesson_reference = str(refund.payment.booking.id)[:8].upper()
                 title = "Refund processed"
-                body = (
-                    f"Your refund for lesson {lesson_reference} has been processed."
-                )
+                body = f"Your refund for lesson {lesson_reference} has been processed."
                 if await notifications_enabled_for_channel(db, user.id, channel="email"):
                     try:
                         refund_processed(
@@ -1187,7 +1213,9 @@ def send_refund_notification(self, refund_id: str) -> None:
                         provider="smtp",
                         error_message="Channel disabled by user preferences.",
                     )
-                if user.phone and await notifications_enabled_for_channel(db, user.id, channel="sms"):
+                if user.phone and await notifications_enabled_for_channel(
+                    db, user.id, channel="sms"
+                ):
                     _queue_sms_delivery(
                         user_id=user.id,
                         to=user.phone,
@@ -1238,4 +1266,4 @@ def send_refund_notification(self, refund_id: str) -> None:
         logger.info("send_refund_notification.done", refund_id=refund_id)
     except Exception as exc:
         logger.error("send_refund_notification.error", refund_id=refund_id, error=str(exc))
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc

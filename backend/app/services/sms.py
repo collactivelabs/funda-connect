@@ -136,7 +136,10 @@ def build_verification_result_sms(*, status_label: str, notes: str | None = None
 
 def build_payout_processed_sms(*, amount_cents: int, bank_reference: str | None = None) -> str:
     reference_suffix = f" Ref {bank_reference}." if bank_reference else "."
-    return f"FundaConnect: Your payout of {format_rand(amount_cents)} has been marked paid{reference_suffix}"
+    return (
+        "FundaConnect: Your payout of "
+        f"{format_rand(amount_cents)} has been marked paid{reference_suffix}"
+    )
 
 
 def build_refund_processed_sms(*, amount_cents: int, lesson_reference: str) -> str:

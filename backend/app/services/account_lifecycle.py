@@ -24,7 +24,7 @@ from app.models.notification import (
     PushSubscription,
 )
 from app.models.parent import Learner, ParentProfile
-from app.models.payment import Payment, Refund, VerificationDocument
+from app.models.payment import Payment, Refund
 from app.models.review import Review
 from app.models.teacher import TeacherProfile, TeacherSubject
 from app.models.user import User
@@ -303,7 +303,9 @@ def _serialize_booking(booking: Booking) -> dict:
         "video_room_url": booking.video_room_url,
         "is_trial": booking.is_trial,
         "is_recurring": booking.is_recurring,
-        "recurring_booking_id": str(booking.recurring_booking_id) if booking.recurring_booking_id else None,
+        "recurring_booking_id": str(booking.recurring_booking_id)
+        if booking.recurring_booking_id
+        else None,
         "parent_notes": booking.parent_notes,
         "cancellation_reason": booking.cancellation_reason,
         "cancelled_at": booking.cancelled_at,
@@ -474,11 +476,15 @@ async def export_account_data(db: AsyncSession, user_id: UUID) -> dict[str, obje
         "parent_profile": _serialize_parent_profile(user.parent_profile),
         "teacher_profile": _serialize_teacher_profile(user.teacher_profile),
         "bookings": [_serialize_booking(booking) for booking in bookings],
-        "notifications": [_serialize_notification(notification) for notification in user.notifications],
+        "notifications": [
+            _serialize_notification(notification) for notification in user.notifications
+        ],
         "notification_deliveries": [
             _serialize_notification_delivery(delivery) for delivery in user.notification_deliveries
         ],
-        "notification_preferences": _serialize_notification_preferences(user.notification_preferences),
+        "notification_preferences": _serialize_notification_preferences(
+            user.notification_preferences
+        ),
         "push_subscriptions": [
             _serialize_push_subscription(subscription) for subscription in user.push_subscriptions
         ],
@@ -504,7 +510,9 @@ async def get_account_deletion_status(db: AsyncSession, user_id: UUID) -> dict[s
     return _deletion_response(user)
 
 
-async def _future_bookings_owned_by_user(db: AsyncSession, user: User, now_utc: datetime) -> list[Booking]:
+async def _future_bookings_owned_by_user(
+    db: AsyncSession, user: User, now_utc: datetime
+) -> list[Booking]:
     statement = (
         select(Booking)
         .where(
@@ -604,7 +612,10 @@ async def request_account_deletion(
                     reason="Account deletion requested",
                     requested_by_role=user.role,
                     policy_code="account_deletion",
-                    notes="Created from account deletion. Process manually in PayFast and then mark refunded.",
+                    notes=(
+                        "Created from account deletion. Process manually in "
+                        "PayFast and then mark refunded."
+                    ),
                 )
                 db.add(refund)
             else:
@@ -613,7 +624,10 @@ async def request_account_deletion(
                 refund.reason = "Account deletion requested"
                 refund.requested_by_role = user.role
                 refund.policy_code = "account_deletion"
-                refund.notes = "Created from account deletion. Process manually in PayFast and then mark refunded."
+                refund.notes = (
+                    "Created from account deletion. Process manually in "
+                    "PayFast and then mark refunded."
+                )
 
         if user.role == "parent" and booking.teacher and booking.teacher.user:
             await create_in_app_notification(
@@ -622,7 +636,9 @@ async def request_account_deletion(
                 notification_type="booking_cancelled",
                 title="Lesson cancelled",
                 body=(
-                    f"A lesson on {_lesson_time_label(booking.scheduled_at)} was cancelled because the parent account is being closed."
+                    "A lesson on "
+                    f"{_lesson_time_label(booking.scheduled_at)} was cancelled "
+                    "because the parent account is being closed."
                 ),
                 metadata={"booking_id": str(booking.id), "cancelled_by_role": user.role},
             )
@@ -633,7 +649,9 @@ async def request_account_deletion(
                 notification_type="booking_cancelled",
                 title="Lesson cancelled",
                 body=(
-                    f"A lesson on {_lesson_time_label(booking.scheduled_at)} was cancelled because the teacher account is being closed."
+                    "A lesson on "
+                    f"{_lesson_time_label(booking.scheduled_at)} was cancelled "
+                    "because the teacher account is being closed."
                 ),
                 metadata={"booking_id": str(booking.id), "cancelled_by_role": user.role},
             )
@@ -699,7 +717,9 @@ async def anonymize_user_account(db: AsyncSession, user: User) -> bool:
         for booking in bookings_result.all():
             booking.parent_notes = None
             if booking.payment and booking.payment.gateway_metadata:
-                booking.payment.gateway_metadata = redact_payment_metadata(booking.payment.gateway_metadata)
+                booking.payment.gateway_metadata = redact_payment_metadata(
+                    booking.payment.gateway_metadata
+                )
 
     if user.teacher_profile is not None:
         user.teacher_profile.bio = None
@@ -716,11 +736,15 @@ async def anonymize_user_account(db: AsyncSession, user: User) -> bool:
         user.teacher_profile.province = None
 
         availability_result = await db.scalars(
-            select(Booking).where(Booking.teacher_id == user.teacher_profile.id).options(selectinload(Booking.payment))
+            select(Booking)
+            .where(Booking.teacher_id == user.teacher_profile.id)
+            .options(selectinload(Booking.payment))
         )
         for booking in availability_result.all():
             if booking.payment and booking.payment.gateway_metadata:
-                booking.payment.gateway_metadata = redact_payment_metadata(booking.payment.gateway_metadata)
+                booking.payment.gateway_metadata = redact_payment_metadata(
+                    booking.payment.gateway_metadata
+                )
 
         reviews_result = await db.scalars(
             select(Review).where(Review.teacher_id == user.teacher_profile.id)
@@ -747,14 +771,18 @@ async def anonymize_user_account(db: AsyncSession, user: User) -> bool:
     await db.execute(delete(PushSubscription).where(PushSubscription.user_id == user.id))
     await db.execute(delete(NotificationDelivery).where(NotificationDelivery.user_id == user.id))
     await db.execute(delete(Notification).where(Notification.user_id == user.id))
-    await db.execute(delete(NotificationPreference).where(NotificationPreference.user_id == user.id))
+    await db.execute(
+        delete(NotificationPreference).where(NotificationPreference.user_id == user.id)
+    )
 
     user.email = anonymized_email_for_user(user.id, old_email)
     user.first_name = "Deleted"
     user.last_name = "User"
     user.phone = None
     user.avatar_url = None
-    user.password_hash = hash_password(hashlib.sha256(f"{user.id}:{old_email}:{now_utc.isoformat()}".encode()).hexdigest())
+    user.password_hash = hash_password(
+        hashlib.sha256(f"{user.id}:{old_email}:{now_utc.isoformat()}".encode()).hexdigest()
+    )
     user.email_verified = False
     user.phone_verified = False
     user.is_active = False

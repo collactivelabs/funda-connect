@@ -73,7 +73,9 @@ def get_rejected_required_document_types(documents: Iterable) -> list[str]:
         matching = _docs_for_type(documents_list, document_type)
         if not matching:
             continue
-        if any(getattr(document, "status", None) in USABLE_DOCUMENT_STATUSES for document in matching):
+        if any(
+            getattr(document, "status", None) in USABLE_DOCUMENT_STATUSES for document in matching
+        ):
             continue
         if _has_status(matching, "rejected"):
             rejected_types.append(document_type)

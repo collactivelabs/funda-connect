@@ -248,7 +248,9 @@ def validate_notification_preference_channels(
         if not sms_provider_configured():
             raise ValueError("SMS delivery is not configured for this environment yet.")
         if not user.phone:
-            raise ValueError("Add a phone number to your account before enabling SMS notifications.")
+            raise ValueError(
+                "Add a phone number to your account before enabling SMS notifications."
+            )
         try:
             normalize_phone_number(user.phone)
         except ValueError as exc:

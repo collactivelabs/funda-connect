@@ -18,7 +18,9 @@ class TeacherProfile(UUIDMixin, TimestampMixin, Base):
     headline: Mapped[str | None] = mapped_column(String(200))
     years_experience: Mapped[int | None] = mapped_column(Integer)
     hourly_rate_cents: Mapped[int | None] = mapped_column(Integer)  # ZAR in cents
-    curricula: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)  # CAPS, Cambridge, IEB
+    curricula: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list
+    )  # CAPS, Cambridge, IEB
     verification_status: Mapped[str] = mapped_column(
         String(30), default="pending", index=True
     )  # pending | under_review | verified | rejected | suspended
@@ -53,12 +55,17 @@ class TeacherSubject(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "teacher_subjects"
 
     teacher_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teacher_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("teacher_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     subject_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False
     )
-    grade_levels: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)  # ["Grade 10", "Grade 11"]
+    grade_levels: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list
+    )  # ["Grade 10", "Grade 11"]
     curriculum: Mapped[str] = mapped_column(String(30))  # CAPS | Cambridge | IEB
 
     # Relationships

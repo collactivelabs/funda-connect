@@ -25,7 +25,9 @@ async def create_review(
         select(ParentProfile).where(ParentProfile.user_id == UUID(payload["sub"]))
     )
     if not parent_profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent profile not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Parent profile not found"
+        )
 
     booking = await db.get(Booking, body.booking_id)
     if not booking:
@@ -71,7 +73,9 @@ async def reply_to_review(
         select(TeacherProfile).where(TeacherProfile.user_id == UUID(payload["sub"]))
     )
     if not teacher_profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher profile not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Teacher profile not found"
+        )
 
     review = await db.get(Review, review_id)
     if not review:

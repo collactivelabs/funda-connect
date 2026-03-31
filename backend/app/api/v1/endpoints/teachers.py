@@ -5,11 +5,10 @@ from uuid import UUID
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
-from pydantic import BaseModel, ConfigDict
 
 from app.core.config import settings
 from app.core.deps import get_db, require_teacher
@@ -23,26 +22,9 @@ from app.schemas.booking import (
     AvailabilitySlotResponse,
     BlockedDateResponse,
     BookableSlotResponse,
-    SetBlockedDatesRequest,
     SetAvailabilityRequest,
+    SetBlockedDatesRequest,
 )
-from app.services.scheduling import (
-    SAST,
-    are_slot_keys_available,
-    booking_lead_cutoff,
-    booking_occurrence_starts,
-    occurrences_touch_blocked_dates,
-    format_date_label,
-    format_time_label,
-    get_teacher_booking_conflicts,
-    is_duration_supported,
-    local_datetime,
-    normalize_utc,
-    slot_conflicts_with_bookings,
-    slot_lock_keys,
-)
-from app.services.storage import build_s3_client, build_s3_object_url
-from app.services.teacher_search import search_teacher_ids, sync_teacher_document_by_id
 from app.schemas.teacher import (
     AddSubjectRequest,
     DocumentAccessResponse,
@@ -51,15 +33,32 @@ from app.schemas.teacher import (
     UpdateProfileRequest,
     VerificationDocumentResponse,
 )
-from app.services.notifications import create_in_app_notifications, list_admin_user_ids
 from app.services.audit import create_audit_log
 from app.services.file_validation import UploadValidationError, validate_upload
 from app.services.malware_scan import scan_upload_for_malware
+from app.services.notifications import create_in_app_notifications, list_admin_user_ids
 from app.services.rate_limits import (
     TEACHER_UPLOAD_RATE_LIMIT,
     build_rate_limit_identifier,
     enforce_rate_limit,
 )
+from app.services.scheduling import (
+    SAST,
+    are_slot_keys_available,
+    booking_lead_cutoff,
+    booking_occurrence_starts,
+    format_date_label,
+    format_time_label,
+    get_teacher_booking_conflicts,
+    is_duration_supported,
+    local_datetime,
+    normalize_utc,
+    occurrences_touch_blocked_dates,
+    slot_conflicts_with_bookings,
+    slot_lock_keys,
+)
+from app.services.storage import build_s3_client, build_s3_object_url
+from app.services.teacher_search import search_teacher_ids, sync_teacher_document_by_id
 from app.services.verification_documents import (
     build_document_access_url,
     derive_teacher_verification_status,
@@ -70,6 +69,7 @@ router = APIRouter()
 
 
 # ── Helpers ──────────────────────────────────────────────────
+
 
 def _teacher_response(profile: TeacherProfile) -> TeacherProfileResponse:
     subjects = [TeacherSubjectResponse.from_orm_with_subject(ts) for ts in profile.subjects]
@@ -101,7 +101,9 @@ async def _get_my_profile(payload: dict, db: AsyncSession) -> TeacherProfile:
         .options(selectinload(TeacherProfile.user))
     )
     if not profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher profile not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Teacher profile not found"
+        )
     return profile
 
 
@@ -139,15 +141,11 @@ async def _list_teachers_via_db(
         query = query.where(TeacherProfile.curricula.contains([curriculum]))
     if subject:
         query = query.where(
-            TeacherProfile.subjects.any(
-                TeacherSubject.subject.has(Subject.slug == subject)
-            )
+            TeacherProfile.subjects.any(TeacherSubject.subject.has(Subject.slug == subject))
         )
     if grade:
         query = query.where(
-            TeacherProfile.subjects.any(
-                TeacherSubject.grade_levels.contains([grade])
-            )
+            TeacherProfile.subjects.any(TeacherSubject.grade_levels.contains([grade]))
         )
     if q:
         term = f"%{q.strip()}%"
@@ -182,13 +180,16 @@ async def _list_teachers_via_db(
     sort_column = sort_columns.get(sort_by or "")
     if sort_column is not None:
         direction = sort_column.asc() if sort_order == "asc" else sort_column.desc()
-        query = query.order_by(TeacherProfile.is_premium.desc(), direction, TeacherProfile.created_at.desc())
+        query = query.order_by(
+            TeacherProfile.is_premium.desc(), direction, TeacherProfile.created_at.desc()
+        )
 
     result = await db.scalars(query)
     return [_teacher_response(p) for p in result.unique().all()]
 
 
 # ── Public ────────────────────────────────────────────────────
+
 
 @router.get("", response_model=list[TeacherProfileResponse])
 async def list_teachers(
@@ -245,11 +246,14 @@ async def list_teachers(
         .options(selectinload(TeacherProfile.user))
     )
     profiles_by_id = {str(profile.id): profile for profile in result.unique().all()}
-    ordered_profiles = [profiles_by_id[teacher_id] for teacher_id in search_ids if teacher_id in profiles_by_id]
+    ordered_profiles = [
+        profiles_by_id[teacher_id] for teacher_id in search_ids if teacher_id in profiles_by_id
+    ]
     return [_teacher_response(profile) for profile in ordered_profiles]
 
 
 # ── Teacher-only (must be registered BEFORE /{teacher_id} to avoid UUID parsing) ──
+
 
 @router.get("/me", response_model=TeacherProfileResponse)
 async def get_my_profile(
@@ -273,7 +277,9 @@ async def update_my_profile(
     return _teacher_response(profile)
 
 
-@router.post("/me/subjects", response_model=TeacherSubjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/me/subjects", response_model=TeacherSubjectResponse, status_code=status.HTTP_201_CREATED
+)
 async def add_subject(
     body: AddSubjectRequest,
     payload: dict = Depends(require_teacher),
@@ -291,7 +297,9 @@ async def add_subject(
         )
     )
     if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Subject already added for this curriculum")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Subject already added for this curriculum"
+        )
     ts = TeacherSubject(
         teacher_id=profile.id,
         subject_id=body.subject_id,
@@ -342,9 +350,7 @@ async def set_my_availability(
 ):
     """Replace all availability slots (full overwrite)."""
     profile = await _get_my_profile(payload, db)
-    await db.execute(
-        delete(AvailabilitySlot).where(AvailabilitySlot.teacher_id == profile.id)
-    )
+    await db.execute(delete(AvailabilitySlot).where(AvailabilitySlot.teacher_id == profile.id))
     slots = [
         AvailabilitySlot(
             teacher_id=profile.id,
@@ -405,7 +411,11 @@ async def set_my_blocked_dates(
 # ── Documents ─────────────────────────────────────────────────
 
 _ALLOWED_DOC_TYPES = {
-    "id_document", "qualification", "sace_certificate", "nrso_clearance", "reference_letter"
+    "id_document",
+    "qualification",
+    "sace_certificate",
+    "nrso_clearance",
+    "reference_letter",
 }
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 _DOCUMENT_ACCESS_TTL_SECONDS = 900
@@ -574,6 +584,7 @@ async def upload_document(
     _sync_profile_verification_state(profile)
 
     from app.tasks.notifications import notify_admin_verification_submitted
+
     if has_uploaded_all_required_documents(profile.documents):
         admin_user_ids = await list_admin_user_ids(db)
         await create_in_app_notifications(
@@ -582,7 +593,8 @@ async def upload_document(
             notification_type="teacher_verification_submitted",
             title="Teacher verification ready",
             body=(
-                f"{profile.user.first_name} {profile.user.last_name} uploaded all required verification documents."
+                f"{profile.user.first_name} {profile.user.last_name} uploaded "
+                "all required verification documents."
             ),
             metadata={"teacher_id": str(profile.id)},
         )
@@ -621,9 +633,7 @@ async def get_my_earnings(
     profile = await _get_my_profile(payload, db)
 
     payouts_result = await db.scalars(
-        select(Payout)
-        .where(Payout.teacher_id == profile.id)
-        .order_by(Payout.created_at.desc())
+        select(Payout).where(Payout.teacher_id == profile.id).order_by(Payout.created_at.desc())
     )
     payouts = payouts_result.all()
 
@@ -640,6 +650,7 @@ async def get_my_earnings(
 
 
 # ── Public (parameterised — must come AFTER /me routes) ───────
+
 
 @router.get("/{teacher_id}", response_model=TeacherProfileResponse)
 async def get_teacher(teacher_id: UUID, db: AsyncSession = Depends(get_db)):
@@ -732,11 +743,7 @@ async def get_teacher_bookable_slots(
         if current_date in blocked_dates:
             continue
         current_day_slots = sorted(
-            (
-                slot
-                for slot in availability_slots
-                if slot.day_of_week == current_date.weekday()
-            ),
+            (slot for slot in availability_slots if slot.day_of_week == current_date.weekday()),
             key=lambda slot: (slot.start_time, slot.end_time),
         )
 
@@ -750,7 +757,10 @@ async def get_teacher_bookable_slots(
                     continue
 
                 candidate_start_utc = normalize_utc(candidate_start_local.astimezone(UTC))
-                if ignored_booking_start is not None and candidate_start_utc == ignored_booking_start:
+                if (
+                    ignored_booking_start is not None
+                    and candidate_start_utc == ignored_booking_start
+                ):
                     candidate_start_local += step
                     continue
                 if candidate_start_utc in seen_start_times:

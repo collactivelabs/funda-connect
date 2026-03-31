@@ -1,7 +1,6 @@
+import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-import re
-
 
 _ALLOWED_SIGNATURES = {
     "application/pdf": (b"%PDF-",),

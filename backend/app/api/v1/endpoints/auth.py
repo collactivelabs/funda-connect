@@ -43,10 +43,6 @@ from app.services.auth_tokens import (
     revoke_session_by_id,
     rotate_refresh_session,
 )
-from app.tasks.notifications import (
-    send_email_verification_message,
-    send_password_reset_message,
-)
 from app.services.consent import record_registration_consents
 from app.services.google_oauth import (
     GoogleOAuthFlowError,
@@ -67,6 +63,10 @@ from app.services.rate_limits import (
     AUTH_VERIFY_EMAIL_REQUEST_RATE_LIMIT,
     build_rate_limit_identifier,
     enforce_rate_limit,
+)
+from app.tasks.notifications import (
+    send_email_verification_message,
+    send_password_reset_message,
 )
 
 router = APIRouter()

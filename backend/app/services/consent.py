@@ -142,7 +142,9 @@ async def get_current_consents(db: AsyncSession, user_id: UUID) -> dict[str, dic
         record = next((item for item in records if item.consent_type == consent_type), None)
         current[consent_type] = {
             "granted": record.granted if record is not None else False,
-            "version": record.version if record is not None else current_consent_versions()[consent_type],
+            "version": record.version
+            if record is not None
+            else current_consent_versions()[consent_type],
             "granted_at": record.granted_at if record is not None else None,
             "revoked_at": record.revoked_at if record is not None else None,
         }

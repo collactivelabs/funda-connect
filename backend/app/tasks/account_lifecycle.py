@@ -13,7 +13,9 @@ def anonymize_due_accounts() -> None:
         from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
         from app.core.config import settings
-        from app.services.account_lifecycle import anonymize_due_accounts as anonymize_due_accounts_service
+        from app.services.account_lifecycle import (
+            anonymize_due_accounts as anonymize_due_accounts_service,
+        )
 
         engine = create_async_engine(settings.DATABASE_URL, echo=False)
 

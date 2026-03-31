@@ -10,7 +10,7 @@ from app.models.notification import (
     PushSubscription,
 )
 from app.models.parent import Learner, ParentProfile
-from app.models.payment import Payout, Payment, VerificationDocument
+from app.models.payment import Payment, Payout, VerificationDocument
 from app.models.review import Review
 from app.models.teacher import TeacherProfile, TeacherSubject
 from app.models.user import User

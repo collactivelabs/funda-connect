@@ -16,7 +16,9 @@ class RateLimit:
 AUTH_REGISTER_RATE_LIMIT = RateLimit("auth.register", limit=5, window_seconds=3600)
 AUTH_LOGIN_RATE_LIMIT = RateLimit("auth.login", limit=10, window_seconds=300)
 AUTH_REFRESH_RATE_LIMIT = RateLimit("auth.refresh", limit=30, window_seconds=300)
-AUTH_VERIFY_EMAIL_REQUEST_RATE_LIMIT = RateLimit("auth.verify_email_request", limit=5, window_seconds=3600)
+AUTH_VERIFY_EMAIL_REQUEST_RATE_LIMIT = RateLimit(
+    "auth.verify_email_request", limit=5, window_seconds=3600
+)
 AUTH_VERIFY_EMAIL_RATE_LIMIT = RateLimit("auth.verify_email", limit=10, window_seconds=3600)
 AUTH_FORGOT_PASSWORD_RATE_LIMIT = RateLimit("auth.forgot_password", limit=5, window_seconds=3600)
 AUTH_RESET_PASSWORD_RATE_LIMIT = RateLimit("auth.reset_password", limit=10, window_seconds=3600)

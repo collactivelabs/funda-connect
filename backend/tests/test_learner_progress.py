@@ -83,7 +83,10 @@ def test_build_learner_progress_summary_returns_recent_lessons_subject_rollups_a
     assert summary.total_minutes == 150
     assert summary.subject_count == 2
     assert summary.topic_count == 3
-    assert [subject.subject_name for subject in summary.subjects] == ["Mathematics", "Physical Sciences"]
+    assert [subject.subject_name for subject in summary.subjects] == [
+        "Mathematics",
+        "Physical Sciences",
+    ]
     assert summary.recent_lessons[0].lesson_notes == "Worked through graphs and intercepts."
     assert [topic.name for topic in summary.topics_covered] == [
         "Functions and graphs",

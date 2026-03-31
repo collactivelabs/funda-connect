@@ -24,8 +24,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e './backend[dev]'
 
+      - name: Backend lint
+        run: python -m ruff check backend/app backend/tests
+
       - name: Backend tests
-        run: python -m pytest backend/tests/test_config.py backend/tests/test_scheduling.py
+        run: python -m pytest backend/tests
 
   frontend:
     runs-on: ubuntu-latest

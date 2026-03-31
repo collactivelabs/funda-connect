@@ -1,6 +1,7 @@
 """
 Celery tasks for automatic lesson lifecycle management.
 """
+
 import asyncio
 from datetime import UTC, datetime, timedelta
 
@@ -49,7 +50,9 @@ def expire_pending_booking_hold(booking_id: str) -> None:
 
                 recurring_weeks = 1
                 if booking.payment and isinstance(booking.payment.gateway_metadata, dict):
-                    recurring_weeks = int(booking.payment.gateway_metadata.get("recurring_weeks") or 1)
+                    recurring_weeks = int(
+                        booking.payment.gateway_metadata.get("recurring_weeks") or 1
+                    )
 
                 booking.status = "expired"
                 booking.hold_expires_at = None
@@ -108,7 +111,9 @@ def expire_pending_booking_holds() -> None:
         expire_pending_booking_hold.delay(booking_id)
 
     if expired_ids:
-        logger.info("expire_pending_booking_holds.done", count=len(expired_ids), booking_ids=expired_ids)
+        logger.info(
+            "expire_pending_booking_holds.done", count=len(expired_ids), booking_ids=expired_ids
+        )
 
 
 @celery_app.task
@@ -169,6 +174,7 @@ def auto_complete_lessons() -> None:
     has elapsed, then create pending Payout records for each.
     Runs every 15 minutes via Celery Beat.
     """
+
     async def _run():
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine

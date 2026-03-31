@@ -130,7 +130,12 @@ def test_slot_conflicts_with_bookings_can_ignore_the_booking_being_rescheduled()
         duration_minutes=60,
     )
 
-    assert slot_conflicts_with_bookings([confirmed], [occurrence_start], 60, ignore_booking_id=booking_id) is False
+    assert (
+        slot_conflicts_with_bookings(
+            [confirmed], [occurrence_start], 60, ignore_booking_id=booking_id
+        )
+        is False
+    )
 
 
 def test_occurrences_touch_blocked_dates_detects_any_week_in_series():
@@ -139,5 +144,15 @@ def test_occurrences_touch_blocked_dates_detects_any_week_in_series():
         recurring_weeks=3,
     )
 
-    assert occurrences_touch_blocked_dates(occurrences, {datetime(2026, 4, 6, 0, 0, tzinfo=UTC).date()}) is True
-    assert occurrences_touch_blocked_dates(occurrences, {datetime(2026, 4, 20, 0, 0, tzinfo=UTC).date()}) is False
+    assert (
+        occurrences_touch_blocked_dates(
+            occurrences, {datetime(2026, 4, 6, 0, 0, tzinfo=UTC).date()}
+        )
+        is True
+    )
+    assert (
+        occurrences_touch_blocked_dates(
+            occurrences, {datetime(2026, 4, 20, 0, 0, tzinfo=UTC).date()}
+        )
+        is False
+    )

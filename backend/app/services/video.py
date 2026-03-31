@@ -3,6 +3,7 @@ daily.co video room management.
 
 Docs: https://docs.daily.co/reference/rest-api/rooms
 """
+
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -26,7 +27,9 @@ async def create_room(booking_id: str, scheduled_at: datetime, duration_minutes:
 
     # Room expires 30 minutes after the lesson ends
     exp = scheduled_at + timedelta(minutes=duration_minutes + 30)
-    exp_ts = int(exp.replace(tzinfo=UTC).timestamp()) if exp.tzinfo is None else int(exp.timestamp())
+    exp_ts = (
+        int(exp.replace(tzinfo=UTC).timestamp()) if exp.tzinfo is None else int(exp.timestamp())
+    )
 
     # Room names must be URL-safe; use first 8 chars of booking UUID
     room_name = f"fc-{booking_id.replace('-', '')[:16]}"

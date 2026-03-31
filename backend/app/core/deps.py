@@ -15,12 +15,12 @@ async def get_current_user_payload(
 ) -> dict:
     try:
         payload = decode_access_token(credentials.credentials)
-    except ValueError:
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
 
     user = await db.get(User, payload["sub"])
     if not user:
@@ -40,8 +40,11 @@ async def get_current_user_payload(
 def require_role(*roles: str):
     async def _check(payload: dict = Depends(get_current_user_payload)) -> dict:
         if payload.get("role") not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+            )
         return payload
+
     return _check
 
 

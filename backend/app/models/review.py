@@ -12,7 +12,10 @@ class Review(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "reviews"
 
     booking_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), unique=True, nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("bookings.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
     )
     teacher_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("teacher_profiles.id"), nullable=False, index=True

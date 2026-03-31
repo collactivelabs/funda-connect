@@ -307,7 +307,9 @@ async def sync_teacher_document_by_id(db: AsyncSession, teacher_id: UUID) -> Non
         try:
             await asyncio.to_thread(_delete_teacher_document_sync, teacher_id)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("teacher_search.delete_failed", teacher_id=str(teacher_id), error=str(exc))
+            logger.warning(
+                "teacher_search.delete_failed", teacher_id=str(teacher_id), error=str(exc)
+            )
         return
 
     document = serialize_teacher_search_document(profile)

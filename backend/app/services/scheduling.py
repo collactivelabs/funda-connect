@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 from sqlalchemy import and_, or_, select
@@ -43,7 +43,9 @@ def occurrences_touch_blocked_dates(
     occurrence_starts: list[datetime],
     blocked_dates: set[date],
 ) -> bool:
-    return any(normalize_utc(start).astimezone(SAST).date() in blocked_dates for start in occurrence_starts)
+    return any(
+        normalize_utc(start).astimezone(SAST).date() in blocked_dates for start in occurrence_starts
+    )
 
 
 def slot_lock_keys(
@@ -99,15 +101,16 @@ async def are_slot_keys_available(redis: aioredis.Redis, keys: list[str]) -> boo
 
 
 def is_duration_supported(duration_minutes: int) -> bool:
-    return 30 <= duration_minutes <= MAX_BOOKING_DURATION_MINUTES and duration_minutes % SLOT_STEP_MINUTES == 0
+    return (
+        30 <= duration_minutes <= MAX_BOOKING_DURATION_MINUTES
+        and duration_minutes % SLOT_STEP_MINUTES == 0
+    )
 
 
 def is_slot_aligned(start_at: datetime) -> bool:
     local_start = normalize_utc(start_at).astimezone(SAST)
     return (
-        local_start.minute in (0, 30)
-        and local_start.second == 0
-        and local_start.microsecond == 0
+        local_start.minute in (0, 30) and local_start.second == 0 and local_start.microsecond == 0
     )
 
 

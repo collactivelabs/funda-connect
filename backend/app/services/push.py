@@ -144,7 +144,9 @@ async def send_web_push(
     try:
         pywebpush = importlib.import_module("pywebpush")
     except ImportError as exc:
-        raise PushConfigurationError("pywebpush is not installed in the backend environment") from exc
+        raise PushConfigurationError(
+            "pywebpush is not installed in the backend environment"
+        ) from exc
 
     payload = {
         "title": title,
